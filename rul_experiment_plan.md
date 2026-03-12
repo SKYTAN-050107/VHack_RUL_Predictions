@@ -116,21 +116,6 @@ Three dimensionality reduction options will be tested.
 
 > **Note:** PCA is applied after scaling and feature engineering.
 
----
-
-## 4. Total Experiment Design
-
-Factorial experiment size:
-
-| Factor | Count |
-|--------|-------|
-| Outlier methods | 8 |
-| Feature engineering methods | 5 |
-| Dimensionality reduction methods | 3 |
-
-**Total experiments: 8 × 5 × 3 = 120**
-
----
 
 ## 5. Data Preparation Pipeline
 
