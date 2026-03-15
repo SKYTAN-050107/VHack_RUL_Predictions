@@ -1,38 +1,62 @@
-from __future__ import annotations
-
-from dataclasses import dataclass
-
 import torch
-from torch import nn
+import tensorflow as tf
+from tensorflow.keras import layers, Model, Input
 
 
-@dataclass(slots=True)
-class LSTMBaselineConfig:
-    input_size: int
-    hidden_size: int = 64
-    num_layers: int = 2
-    dropout: float = 0.2
+def build_lstm_baseline(window_size: int = 30,
+                         n_features: int = 24,
+                         lstm_units: int = 100,
+                         dense_units: list = None,
+                         dropout_rate: float = 0.5,
+                         learning_rate: float = 1e-3) -> Model:
+    """
+    Baseline LSTM model for single-domain RUL regression.
 
+    This is the SOURCE-ONLY / TARGET-ONLY architecture referenced throughout
+    the paper. It establishes the performance ceiling (TARGET-ONLY, trained
+    on the same domain) and the unadapted baseline (SOURCE-ONLY, applied
+    cross-domain without any adaptation).
 
-class LSTMBaseline(nn.Module):
-    def __init__(self, config: LSTMBaselineConfig) -> None:
-        super().__init__()
-        lstm_dropout = config.dropout if config.num_layers > 1 else 0.0
-        self.lstm = nn.LSTM(
-            input_size=config.input_size,
-            hidden_size=config.hidden_size,
-            num_layers=config.num_layers,
-            dropout=lstm_dropout,
-            batch_first=True,
-        )
-        self.regressor = nn.Sequential(
-            nn.Dropout(config.dropout),
-            nn.Linear(config.hidden_size, config.hidden_size // 2),
-            nn.ReLU(),
-            nn.Linear(config.hidden_size // 2, 1),
-        )
+    Architecture:
+        Input(window_size, n_features)
+        → LSTM(100)
+        → Dropout(0.5)
+        → Dense(30, ReLU)
+        → Dropout(0.1)
+        → Dense(20, ReLU)
+        → Dense(1)           ← RUL scalar output
 
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        outputs, _ = self.lstm(inputs)
-        features = outputs[:, -1, :]
-        return self.regressor(features).squeeze(-1)
+    Args:
+        window_size    : Length of input time window (T_w)
+        n_features     : Number of input features (sensors + op_settings)
+        lstm_units     : Number of LSTM cells
+        dense_units    : List of hidden layer sizes after LSTM
+        dropout_rate   : Dropout fraction after LSTM
+        learning_rate  : Adam optimiser learning rate
+
+    Returns:
+        Compiled Keras Model
+    """
+    if dense_units is None:
+        dense_units = [30, 20]
+
+    inp = Input(shape=(window_size, n_features), name='sensor_input')
+
+    x = layers.LSTM(lstm_units, return_sequences=False, name='lstm_1')(inp)
+    x = layers.Dropout(dropout_rate, name='dropout_lstm')(x)
+
+    for i, units in enumerate(dense_units):
+        x = layers.Dense(units, activation='relu', name=f'dense_{i+1}')(x)
+        drop = 0.1 if i < len(dense_units) - 1 else 0.0
+        if drop > 0:
+            x = layers.Dropout(drop, name=f'dropout_dense_{i+1}')(x)
+
+    output = layers.Dense(1, name='rul_output')(x)
+
+    model = Model(inputs=inp, outputs=output, name='LSTM_Baseline')
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+        loss='mse',
+        metrics=['mae']
+    )
+    return model
