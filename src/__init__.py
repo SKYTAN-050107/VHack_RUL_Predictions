@@ -1,14 +1,25 @@
 """Core utilities for the CMAPSS modular pipeline."""
 
-from .data_loader import CMAPSS_COLUMNS, SENSOR_COLUMNS, load_cmapss_subset, read_cmapss_txt
-from .evaluate import evaluate_regression, nasa_score, rmse
+from .data_loader import (
+    CMAPSS_COLUMNS,
+    FEATURE_COLS,
+    SENSOR_COLS,
+    load_all_datasets,
+    load_cmapss,
+    load_rul_labels,
+)
+from .evaluate import compare_models, evaluate_model, mae, nasa_score, rmse
 
 __all__ = [
     "CMAPSS_COLUMNS",
-    "SENSOR_COLUMNS",
-    "evaluate_regression",
-    "load_cmapss_subset",
+    "FEATURE_COLS",
+    "SENSOR_COLS",
+    "compare_models",
+    "evaluate_model",
+    "load_all_datasets",
+    "load_cmapss",
+    "load_rul_labels",
+    "mae",
     "nasa_score",
-    "read_cmapss_txt",
     "rmse",
 ]

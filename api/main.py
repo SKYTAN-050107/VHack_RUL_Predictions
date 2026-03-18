@@ -88,3 +88,82 @@ def predict_rul(request: PredictRequest):
 		raise HTTPException(status_code=404, detail=str(e))
 	except Exception as e:
 		raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+
+# ──────────────────────────────────────────────────────────────────────────────
+# APPEND THESE LINES TO THE BOTTOM OF: api/main.py
+# Do not replace anything — just paste from here to the end of the file
+# ──────────────────────────────────────────────────────────────────────────────
+
+from .schemas import AdaptRequest, AdaptResponse, AdaptPredictRequest
+from .adapt   import run_adaptation, run_adapted_prediction
+
+
+@app.post("/adapt", response_model=AdaptResponse, tags=["Transfer Learning"])
+def adapt_model(request: AdaptRequest):
+    """
+    Fine-tune the pretrained LSTM on data from a NEW machine type.
+
+    Accepts a small labelled dataset (minimum 35 cycles) and runs
+    two-phase transfer learning:
+      - Phase 1: Head-only training (fast, prevents catastrophic forgetting)
+      - Phase 2: Full fine-tuning at low LR (adapts LSTM temporal patterns)
+
+    The resulting adapted pipeline is saved as
+    models/saved/pm_pipeline_{machine_id}.joblib and can be used
+    immediately via POST /predict/adapted.
+    """
+    try:
+        result = run_adaptation(
+            machine_id      = request.machine_id,
+            base_dataset_id = request.base_dataset_id,
+            sensor_names    = request.sensor_names,
+            readings        = request.readings,
+            rul_labels      = request.rul_labels,
+            phase1_epochs   = request.phase1_epochs,
+            phase2_epochs   = request.phase2_epochs,
+            phase1_lr       = request.phase1_lr,
+            phase2_lr       = request.phase2_lr,
+        )
+        return AdaptResponse(**result)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Adaptation failed: {str(e)}")
+
+
+@app.post("/predict/adapted", tags=["Transfer Learning"])
+def predict_adapted(request: AdaptPredictRequest):
+    """
+    Predict RUL using a fine-tuned machine-specific model.
+
+    Use the machine_id returned by POST /adapt.
+    Accepts any number of sensor columns — FeatureAligner handles
+    the mapping to the LSTM's expected input shape automatically.
+    """
+    try:
+        result = run_adapted_prediction(
+            machine_id = request.machine_id,
+            readings   = request.readings,
+        )
+        return result
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+
+
+@app.get("/machines", tags=["Transfer Learning"])
+def list_adapted_machines(models_dir: str = "models/saved"):
+    """List all fine-tuned machine-specific models available for prediction."""
+    import pathlib
+    p = pathlib.Path(models_dir)
+    if not p.exists():
+        return {"adapted_machines": []}
+    machines = [
+        f.stem.replace("pm_pipeline_", "")
+        for f in p.glob("pm_pipeline_*.joblib")
+        if f.stem.replace("pm_pipeline_", "").upper() not in ["FD001", "FD002", "FD003", "FD004"]
+    ]
+    return {"adapted_machines": machines}

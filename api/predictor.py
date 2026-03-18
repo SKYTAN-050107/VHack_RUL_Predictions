@@ -1,11 +1,12 @@
 import numpy as np
 import joblib
 from pathlib import Path
-from typing import Optional
+import re
 
 
 # ── In-memory model registry: loaded once per process, reused per request ─────
 _MODEL_REGISTRY: dict = {}
+_CANONICAL_DATASET_IDS = {"FD001", "FD002", "FD003", "FD004"}
 
 
 def load_pipeline(dataset_id: str, models_dir: str = 'models/saved'):
@@ -27,11 +28,17 @@ def load_pipeline(dataset_id: str, models_dir: str = 'models/saved'):
 	"""
 	key = dataset_id.upper()
 	if key not in _MODEL_REGISTRY:
-		path = Path(models_dir) / f'pm_pipeline_{key.lower()}.joblib'
-		if not path.exists():
+		model_dir = Path(models_dir)
+		candidates = [
+			model_dir / f'pm_pipeline_{key.lower()}.joblib',
+			model_dir / f'pm_pipeline_{key}.joblib',
+		]
+		path = next((candidate for candidate in candidates if candidate.exists()), None)
+		if path is None:
 			raise FileNotFoundError(
 				f"No model found for dataset '{key}'. "
-				f"Expected file: {path}. "
+				f"Expected file like: pm_pipeline_{key.lower()}.joblib "
+				f"under {model_dir}. "
 				f"Run Notebook 08 to export the model first."
 			)
 		_MODEL_REGISTRY[key] = joblib.load(path)
@@ -111,11 +118,13 @@ def run_prediction(unit_id: str, dataset_id: str,
 
 
 def list_available_models(models_dir: str = 'models/saved') -> list:
-	"""Return list of dataset IDs for which .joblib models exist."""
+	"""Return canonical dataset IDs (FD001–FD004) that have exported pipelines."""
 	path = Path(models_dir)
 	if not path.exists():
 		return []
-	return [
-		p.stem.replace('pm_pipeline_', '').upper()
-		for p in path.glob('pm_pipeline_*.joblib')
-	]
+	available = []
+	for p in path.glob('pm_pipeline_*.joblib'):
+		raw_id = p.stem.replace('pm_pipeline_', '').upper()
+		if raw_id in _CANONICAL_DATASET_IDS and re.fullmatch(r"FD\d{3}", raw_id):
+			available.append(raw_id)
+	return sorted(set(available))

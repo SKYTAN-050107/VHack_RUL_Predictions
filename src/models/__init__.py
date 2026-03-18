@@ -1,13 +1,12 @@
 """Model definitions for CMAPSS RUL experiments."""
 
-from .grl import GradientReversal
-from .lstm_baseline import LSTMBaseline, LSTMBaselineConfig
-from .lstm_dann import LSTMDANN, LSTMDANNConfig
+from .grl import GradientReversalLayer
+from .lstm_baseline import build_lstm_baseline
+from .lstm_dann import build_lstm_dann, get_feature_extractor
 
 __all__ = [
-    "GradientReversal",
-    "LSTMBaseline",
-    "LSTMBaselineConfig",
-    "LSTMDANN",
-    "LSTMDANNConfig",
+    "GradientReversalLayer",
+    "build_lstm_baseline",
+    "build_lstm_dann",
+    "get_feature_extractor",
 ]

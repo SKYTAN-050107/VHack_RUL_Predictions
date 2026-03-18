@@ -2,6 +2,7 @@ import numpy as np
 import shap
 import pandas as pd
 import matplotlib.pyplot as plt
+import tensorflow as tf
 
 
 def build_shap_explainer(model,
@@ -20,32 +21,74 @@ def build_shap_explainer(model,
         n_background : Number of background samples to use (100 is sufficient)
 
     Returns:
-        shap.DeepExplainer instance
+        SHAP explainer instance (prefers DeepExplainer; falls back to GradientExplainer)
     """
     rng = np.random.default_rng(random_state)
     idx = rng.choice(len(X_background), size=n_background, replace=False)
     bg  = X_background[idx].astype(np.float32)
-    return shap.DeepExplainer(model, bg)
+    try:
+        return shap.DeepExplainer(model, bg)
+    except Exception:
+        return shap.GradientExplainer(model, bg)
 
 
 def compute_shap_values(explainer,
-                         X_explain: np.ndarray) -> np.ndarray:
+                         X_explain: np.ndarray,
+                         model=None,
+                         background: np.ndarray | None = None) -> np.ndarray:
     """
     Compute SHAP values for a batch of windows.
 
     Args:
-        explainer  : shap.DeepExplainer instance
+        explainer  : SHAP explainer instance
         X_explain  : Windows of shape (n_samples, window_size, n_features)
+        model      : Optional Keras model for gradient-based fallback
+        background : Optional background windows for baseline in fallback
 
     Returns:
         SHAP values of shape (n_samples, window_size, n_features)
         Positive values = pushes RUL higher (healthier signal)
         Negative values = pushes RUL lower (degradation signal)
     """
-    raw = explainer.shap_values(X_explain.astype(np.float32))
+    X_float = X_explain.astype(np.float32)
+
+    def _gradient_fallback_values(model_obj, x_values, bg_values=None):
+        if model_obj is None:
+            raise RuntimeError('No model provided for fallback attribution computation.')
+        if bg_values is not None and len(bg_values) > 0:
+            baseline = np.mean(bg_values.astype(np.float32), axis=0, keepdims=True)
+        else:
+            baseline = np.zeros((1, x_values.shape[1], x_values.shape[2]), dtype=np.float32)
+        baseline_batch = np.repeat(baseline, len(x_values), axis=0)
+        x_tensor = tf.convert_to_tensor(x_values)
+        baseline_tensor = tf.convert_to_tensor(baseline_batch)
+        with tf.GradientTape() as tape:
+            tape.watch(x_tensor)
+            preds = model_obj(x_tensor, training=False)
+            preds = tf.reshape(preds, (-1,))
+        grads = tape.gradient(preds, x_tensor)
+        return (grads * (x_tensor - baseline_tensor)).numpy()
+
+    try:
+        raw = explainer.shap_values(X_float)
+    except Exception as exc:
+        message = str(exc)
+        if ('shap_TensorListStack' in message) or ('shap_StridedSlice' in message):
+            try:
+                model_for_fallback = model
+                if model_for_fallback is None:
+                    model_for_fallback = getattr(explainer, 'model', None)
+                raw = _gradient_fallback_values(model_for_fallback, X_float, background)
+            except Exception:
+                raise
+        else:
+            raise
     # DeepExplainer returns a list for multi-output; take first output
     if isinstance(raw, list):
-        return raw[0]
+        raw = raw[0]
+    raw = np.asarray(raw)
+    if raw.ndim == 4 and raw.shape[-1] == 1:
+        raw = raw[..., 0]
     return raw
 
 

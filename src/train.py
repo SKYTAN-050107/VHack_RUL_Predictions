@@ -46,12 +46,15 @@ class LSTMDANNTrainer:
         self.dom_loss_fn = tf.keras.losses.BinaryCrossentropy()
 
     def _get_feature_vars(self):
-        """All trainable variables belonging to the feature extractor (θ_f)."""
-        feature_layer_names = ['feature_layer'] + \
-            [l.name for l in self.model.layers if 'lstm' in l.name]
+        dom_names = {l.name for l in self.model.layers
+                 if l.name.startswith('dom_') or l.name == 'domain_output'}
+        reg_names = {l.name for l in self.model.layers
+                 if l.name.startswith('reg_') or l.name == 'rul_output'}
+        grl_names = {l.name for l in self.model.layers if 'grl' in l.name}
+        exclude   = dom_names | reg_names | grl_names
         return [v for l in self.model.layers
-                  if l.name in feature_layer_names
-                  for v in l.trainable_variables]
+              if l.name not in exclude
+              for v in l.trainable_variables]
 
     def _get_regressor_vars(self):
         """All trainable variables belonging to the RUL regressor (θ_y)."""

@@ -28,6 +28,7 @@ def apply_savgol_filter(df: pd.DataFrame,
         DataFrame with smoothed sensor values (copy of input)
     """
     df = df.copy()
+    df[sensor_cols] = df[sensor_cols].astype(float)
     for unit_id, group in df.groupby('unit_id'):
         for col in sensor_cols:
             values = group[col].values
