@@ -1,5 +1,6 @@
 import tensorflow as tf
-from tensorflow.keras import layers, Model, Input
+import keras
+from keras import layers, Model, Input
 from typing import Dict
 
 

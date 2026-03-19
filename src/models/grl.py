@@ -1,4 +1,3 @@
-import torch
 import tensorflow as tf
 
 
@@ -44,7 +43,16 @@ class GradientReversalLayer(tf.keras.layers.Layer):
         self.alpha = tf.cast(alpha, dtype=tf.float32)
 
     def call(self, x):
-        return _gradient_reversal_op(x, self.alpha)
+    # Original: just reverses gradient sign
+    # New: reverses AND clips magnitude to prevent over-pushing encoder
+        @tf.custom_gradient
+        def _reverse_clip(x):
+            def grad(dy):
+            # Reverse sign, clip norm to 0.1
+                reversed_grad = -self.alpha * dy
+                return tf.clip_by_norm(reversed_grad, clip_norm=0.1)
+            return x, grad
+        return _reverse_clip(x)
 
     def get_config(self):
         config = super().get_config()

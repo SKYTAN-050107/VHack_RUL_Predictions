@@ -10,6 +10,7 @@ seaborn>=0.12
 plotly>=5.15
 ruptures>=1.1.7          # Change-point detection
 joblib>=1.3
+streamlit>=1.33
 fastapi>=0.103
 uvicorn>=0.23
 pydantic>=2.0
