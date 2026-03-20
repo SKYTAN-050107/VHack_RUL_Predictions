@@ -1,0 +1,31 @@
+# SME Financial & Operational Risk Report
+
+## 1. Downtime Cost Formula
+The official formula for calculating "Total Downtime Cost" in this facility is:
+Total Downtime Cost = (Lost Revenue/Hr + Idle Labor/Hr + Recovery Cost/Hr) × Downtime Duration (Hours)
+
+## 2. Operational Cost Components
+- **Lost Revenue/Hr**: $500.00 (Based on average production output of 50 units/hr at $10 profit per unit)
+- **Idle Labor/Hr**: $150.00 (Fixed cost for 5 machine operators who cannot work during downtime)
+- **Recovery Cost/Hr**: $75.00 (Energy surge costs and system recalibration overhead after a shutdown)
+
+Total Base Hourly Rate = $725.00/hr
+
+## 3. Maintenance Strategy Costs & Durations
+- **Strategy A (Quick Fix / Patch):** 
+  - Action: Basic repair or lubrication. 
+  - Duration: 2 hours. 
+  - Direct Material Cost: $200.
+- **Strategy B (Standard Component Replacement):** 
+  - Action: Replacing major components (Bearings, Seals, etc.). 
+  - Duration: 6 hours. 
+  - Direct Material Cost: $800.
+- **Strategy C (Full Overhaul):** 
+  - Action: Complete disassembly, cleaning, and replacement of all wear parts. 
+  - Duration: 14 hours. 
+  - Direct Material Cost: $2,500.
+
+## 4. Financial Risk Thresholds
+- Low Risk: Total cost < $2,000
+- Medium Risk: Total cost $2,000 - $10,000
+- High Risk: Total cost > $10,000

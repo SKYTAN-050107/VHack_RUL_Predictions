@@ -1,0 +1,28 @@
+# CONFIDENTIAL: Q1 2026 Manufacturing Financial Risk Report
+## Facility: Regional Assembly Plant - Sector B
+
+### 1. Revenue Impact (Lost Sales)
+- **Direct Revenue per Unit**: $125.00
+- **Average Profit Margin**: 8.0% ($10.00/unit)
+- **Baseline Throughput**: 65 Units/Hour
+- **Lost Sales Opportunity (LSO) Rate**: $650.00/Hour
+  *(Calculated as Baseline Throughput × Profit Margin)*
+
+### 2. Operational Burn Rate (Idle Labor & Overhead)
+- **Direct Labor Cost (DLC)**: $160.00/Hour (4 Operators + 1 Team Lead)
+- **Fixed Overhead (FO)**: $90.00/Hour (Electricity, Rent, Support Services)
+- **Total Burn Rate (TBR)**: $250.00/Hour
+  *(Calculated as DLC + FO)*
+
+### 3. Supply Chain Penalties (Contractual)
+- **Late Delivery Penalty**: $1,500.00 per 24-hour period of delay.
+- **Stock-Out Surcharge**: $500.00 fixed cost for emergency parts sourcing if failure is catastrophic.
+
+### 4. Machine Criticality Weights
+Machines are categorized by their impact on the production line:
+- **Bottleneck (Level 3)**: 1.5x Impact Multiplier (Stops entire line)
+- **Semi-Critical (Level 2)**: 1.0x Impact Multiplier (Slows line by 50%)
+- **Support (Level 1)**: 0.5x Impact Multiplier (Redundant equipment available)
+
+### 5. Downtime Cost Formula (Executive Standard)
+**Total Business Impact (TBI) = [(LSO + TBR) × Duration × Criticality Multiplier] + Recovery Costs + Penalties**
