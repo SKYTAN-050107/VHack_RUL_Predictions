@@ -1,6 +1,11 @@
-# Predictive Maintenance Platform for RUL Estimation (NASA C-MAPSS)
+# Predictive Maintenance Platform (NASA C-MAPSS + VHACK Application)
 
-An end-to-end predictive maintenance system that estimates Remaining Useful Life (RUL), detects degradation transitions, supports cross-domain adaptation, and serves predictions through both a Streamlit UI and FastAPI.
+This repository is split into two connected parts:
+
+1. **Model development pipeline** (notebooks + `src/`): ingest, preprocess, train, evaluate, explain, and export artifacts.
+2. **Application layer** (`vhack/` and API): consume exported artifacts for backend inference and frontend product workflows.
+
+---
 
 ## Table of Contents
 
@@ -8,7 +13,8 @@ An end-to-end predictive maintenance system that estimates Remaining Useful Life
 - [Features](#features)
 - [Tech Stack](#tech-stack)
 - [Technical Architecture](#technical-architecture)
-- [Implementation Details](#implementation-details)
+- [Notebook-by-Notebook Workflow and Usage](#notebook-by-notebook-workflow-and-usage)
+- [Artifact Contract (What Feeds Frontend/Backend)](#artifact-contract-what-feeds-frontendbackend)
 - [Project Structure](#project-structure)
 - [Getting Started](#getting-started)
 - [Environment Variables](#environment-variables)
@@ -18,155 +24,285 @@ An end-to-end predictive maintenance system that estimates Remaining Useful Life
 - [Troubleshooting](#troubleshooting)
 - [License](#license)
 
+---
+
 ## System Architecture
 
 ```text
-┌────────────────────────────┐
-│  Data Layer                │
-│  data/raw, data/processed  │
-└──────────────┬─────────────┘
-               │
-               ▼
-┌────────────────────────────┐
-│  ML Core (src/)            │
-│  loading/preprocess/window │
-│  changepoint/train/eval    │
-│  models + adaptation       │
-└───────┬─────────┬──────────┘
-        │         │
-        │         ├──────────────────────────────┐
-        │                                        ▼
-        ▼                              ┌──────────────────────┐
-┌────────────────────────────┐         │ FastAPI Service      │
-│ Streamlit UI (app.py)      │         │ api/main.py          │
-│ interactive 9-step workflow│         │ /predict /adapt ...  │
-└────────────────────────────┘         └──────────┬───────────┘
-                                                   │
-                                                   ▼
-                                         ┌──────────────────────┐
-                                         │ Deployed Artifacts   │
-                                         │ models/saved/*.joblib│
-                                         │ *.keras, *.weights   │
-                                         └──────────────────────┘
+┌───────────────────────────────────────────────────────────────────┐
+│                    DATA & EXPERIMENT LAYER                       │
+│   notebooks/ + src/ + data/raw/ + data/processed/ + artifacts/   │
+└───────────────────────────────┬───────────────────────────────────┘
+                                │ exports trained weights/pipelines
+                                ▼
+┌───────────────────────────────────────────────────────────────────┐
+│                    MODEL ARTIFACT LAYER                          │
+│      models/saved/*.keras, *.weights.h5, *.joblib, *.npy        │
+└───────────────────────────────┬───────────────────────────────────┘
+                                │ consumed by
+             ┌──────────────────┴──────────────────┐
+             ▼                                     ▼
+┌──────────────────────────────┐        ┌──────────────────────────────┐
+│ API Runtime (api/)           │        │ VHACK Product (vhack/)       │
+│ /predict, /adapt, /machines  │        │ backend + frontend + app UI  │
+└──────────────────────────────┘        └──────────────────────────────┘
 ```
+
+---
 
 ## Features
 
-- Multi-dataset C-MAPSS workflow (FD001–FD004).
-- End-to-end preprocessing: smoothing, imputation, normalization, RUL target generation.
-- Baseline LSTM training and domain-adversarial learning (DANN).
-- Change-point detection and health-state classification (`Healthy`, `Warning`, `Critical`).
-- Model explainability utilities (SHAP-oriented workflow).
-- Transfer learning for new machine types with feature alignment.
-- Exportable prediction pipelines (`pm_pipeline_*.joblib`).
-- Interactive Streamlit app for full workflow execution.
-- FastAPI inference endpoints for production-style serving.
+- End-to-end RUL pipeline for FD001–FD004 datasets.
+- Noise handling, missing-data simulation/imputation, and feature scaling.
+- Baseline LSTM training and DANN-based cross-domain adaptation.
+- Change-point detection and health-state classification.
+- Explainability pipeline for feature attribution and operator-facing interpretation.
+- Exported reusable model pipelines for API serving.
+- Transfer-learning path for onboarding new machine domains.
+- Product-facing VHACK application integration (frontend + backend).
+
+---
 
 ## Tech Stack
 
-- **Language:** Python 3.11+
-- **ML / Data:** NumPy, Pandas, SciPy, scikit-learn, TensorFlow/Keras, SHAP
+- **Language:** Python
+- **Data/ML:** NumPy, Pandas, SciPy, scikit-learn, TensorFlow/Keras, SHAP, Ruptures
 - **Visualization:** Matplotlib, Seaborn, Plotly
-- **App/API:** Streamlit, FastAPI, Uvicorn, Pydantic
-- **Utilities:** Joblib, TQDM, Ruptures
-- **Environment / Packaging:** pip, virtualenv, Docker
+- **Serving:** FastAPI, Uvicorn, Pydantic
+- **Apps:** Streamlit (root app and VHACK app)
+- **Persistence:** Joblib, NPY, Keras/H5 model weights
+- **Containerization:** Docker
+
+---
 
 ## Technical Architecture
 
-### 1) Data & Preprocessing Layer
+### Core modules (`src/`)
 
-- `src/data_loader.py`: dataset ingestion for C-MAPSS splits.
-- `src/preprocessor.py`: filtering, imputation, normalization, piecewise RUL labeling.
-- `src/windowing.py`: sequence window generation for temporal models.
+- `data_loader.py`: loads C-MAPSS train/test/RUL splits.
+- `preprocessor.py`: smoothing, missing-value handling, normalization, piecewise RUL.
+- `windowing.py`: sequence window generation for temporal models.
+- `models/`: baseline and adaptation model definitions.
+- `train.py`: model training loop(s), including adversarial training flow.
+- `changepoint.py`: CUSUM-based transition detection and health state logic.
+- `evaluate.py`: RMSE, MAE, NASA score, model comparison utilities.
+- `explainer.py`: explainability helpers used in interpretation steps.
+- `feature_aligner.py`, `fine_tuner.py`: adaptation/transfer-learning utilities.
 
-### 2) Modeling Layer
+### Serving modules (`api/`)
 
-- `src/models/lstm_baseline.py`: baseline temporal regressor.
-- `src/models/lstm_dann.py`, `src/train.py`: domain-adversarial training components.
-- `src/changepoint.py`: CUSUM-based transition detection and health logic.
-- `src/evaluate.py`: RMSE / NASA-style score computation.
+- `main.py`: API routes (`/health`, `/models`, `/predict`, `/adapt`, `/predict/adapted`, `/machines`).
+- `predictor.py`: model registry/load/predict orchestration.
+- `adapt.py`: machine-specific adaptation and adapted inference.
+- `schemas.py`: request/response data contracts.
 
-### 3) Adaptation Layer
+### Product modules (`vhack/`)
 
-- `src/feature_aligner.py`: aligns non-C-MAPSS feature spaces to expected model input.
-- `src/fine_tuner.py`: few-shot two-phase fine-tuning.
-- `src/models/adaptive_lstm.py`: adapted pipeline abstraction for machine-specific models.
+- `vhack/backend/`: backend services and routers.
+- `vhack/frontend/`: frontend pages and app-level interactions.
+- `vhack/app.py`, `vhack/streamlit_app.py`: app entry points.
+- Uses artifacts produced by notebook/model pipeline.
 
-### 4) Serving Layer
+---
 
-- `api/main.py`: REST API endpoints (`/health`, `/models`, `/predict`, `/adapt`, `/predict/adapted`, `/machines`).
-- `api/predictor.py`: model registry, loading, prediction orchestration.
-- `api/adapt.py`: adaptation and adapted-inference execution.
-- `api/schemas.py`: request/response contracts.
+## Notebook-by-Notebook Workflow and Usage
 
-### 5) UX Layer
+This is the exact progression of your model-development lifecycle and how each notebook contributes to the production stack.
 
-- `app.py`: guided 9-step Streamlit interface from ingestion to export and transfer learning.
+### 1) `notebooks/01_data_exploration.ipynb`
 
-## Implementation Details
+**What you did**
+- Loaded raw C-MAPSS datasets and validated structure/columns.
+- Explored engine lifecycle distributions and sensor behavior.
+- Identified dataset differences across FD subsets.
 
-### Core Data Flow
+**Why it matters**
+- Established baseline understanding of signal quality and operating regimes before preprocessing.
 
-1. Load raw engine run-to-failure records from `data/raw`.
-2. Apply per-engine preprocessing and scale features.
-3. Build fixed-length windows for sequence models.
-4. Train/evaluate baseline and adaptation-capable models.
-5. Export reusable pipelines and model weights.
-6. Serve inference via FastAPI and validate via Streamlit UI.
+**Used by**
+- Guides decisions in Notebook 02 (smoothing, imputation, normalization strategy).
 
-### Model Persistence
+---
 
-- Scalers, aligners, and pipelines are serialized with Joblib.
-- Neural network weights are saved in `.keras` or `.weights.h5` formats.
-- Runtime inference primarily resolves `models/saved/pm_pipeline_*.joblib`.
+### 2) `notebooks/02_preprocessing_noise_handling.ipynb`
 
-### API Inference Contract
+**What you did**
+- Applied noise reduction and missing-value handling.
+- Built normalized training inputs and consistent feature processing.
+- Prepared train-ready arrays/tables for downstream sequence modeling.
 
-- `/predict` expects cycles as a 2D array with 24 ordered features per row:
-  - `op_setting_1..3` + `sensor_1..21`.
-- The response includes:
-  - `rul_prediction`, `health_state`, change-point metadata, and operator-friendly explanation text.
+**Typical outputs**
+- Processed datasets in `data/processed/` (for example window-ready arrays/cleaned tables).
+
+**Used by**
+- Notebook 03, 04, 05, and downstream API export path.
+
+---
+
+### 3) `notebooks/03_changepoint_anomaly_detection.ipynb`
+
+**What you did**
+- Implemented and tuned transition/anomaly detection (CUSUM-style logic).
+- Estimated health-transition points across engine trajectories.
+- Mapped transitions to health states for operations context.
+
+**Typical outputs**
+- Change-point/health diagnostics (plots/tables/artifacts as applicable).
+
+**Used by**
+- Prediction explainability and API response enrichment (`health_state`, transition signals).
+
+---
+
+### 4) `notebooks/04_baseline_lstm_rul.ipynb`
+
+**What you did**
+- Trained baseline sequence model for RUL prediction.
+- Tuned/validated baseline behavior on canonical dataset setup.
+- Established baseline metrics for future comparison.
+
+**Typical outputs**
+- Baseline model weights under `models/saved/`.
+
+**Used by**
+- Notebook 05 (as base for adaptation experiments), 06 (comparison), and 08 (export).
+
+---
+
+### 5) `notebooks/05_lstm_dann_domain_adaptation.ipynb`
+
+**What you did**
+- Ran domain-adversarial training for cross-domain robustness.
+- Trained feature extractor + regressor + domain classifier setup.
+- Benchmarked transfer/generalization behavior across dataset pairs.
+
+**Typical outputs**
+- DANN-related weights/adapters/scalers in `models/saved/`.
+
+**Used by**
+- Notebook 06 for comparative evaluation and Notebook 08/09 for deployable adaptation paths.
+
+---
+
+### 6) `notebooks/06_model_evaluation_comparison.ipynb`
+
+**What you did**
+- Compared baseline vs adaptation model families using common metrics.
+- Consolidated RMSE/MAE/NASA score-style reporting.
+- Assessed error profiles and trade-offs for deployment selection.
+
+**Typical outputs**
+- Evaluation summaries/charts used to choose production candidates.
+
+**Used by**
+- Notebook 08 model-export decisions and product readiness checks.
+
+---
+
+### 7) `notebooks/07_interpretability.ipynb`
+
+**What you did**
+- Generated feature-attribution analyses (SHAP-style workflow).
+- Interpreted key sensor contributions to predicted RUL.
+- Produced operator-facing explanatory evidence.
+
+**Typical outputs**
+- Explainability visual assets and feature-importance interpretation artifacts.
+
+**Used by**
+- API/business explanation logic and stakeholder trust/readability.
+
+---
+
+### 8) `notebooks/08_model_export_fastapi.ipynb`
+
+**What you did**
+- Wrapped trained components into deployable pipeline artifacts.
+- Exported model/scaler/aligner bundles for runtime loading.
+- Validated FastAPI serving contract against exported assets.
+
+**Typical outputs**
+- `models/saved/pm_pipeline_*.joblib`
+- Runtime-compatible model files required by `api/`.
+
+**Used by**
+- `api/main.py` and `api/predictor.py` endpoints.
+- Backend flows that power product-facing predictions.
+
+---
+
+### 9) `notebooks/09_mtda_multi_target_extension.ipynb`
+
+**What you did**
+- Extended adaptation to multi-target or broader transfer scenarios.
+- Tested scaling adaptation logic beyond single source-target setup.
+- Investigated robustness for real deployment diversity.
+
+**Typical outputs**
+- Extended adaptation artifacts/configuration candidates.
+
+**Used by**
+- Future-ready transfer learning pipeline and new-machine onboarding.
+
+---
+
+## Artifact Contract (What Feeds Frontend/Backend)
+
+Your application layer relies on artifacts generated in the notebook pipeline.
+
+### Artifact producers
+- Notebooks 04/05/08/09 and related `src/` modules.
+
+### Artifact consumers
+- API: `api/predictor.py`, `api/adapt.py`
+- Product stack: `vhack/backend/` services and frontend-driven prediction workflows.
+
+### Key runtime expectation
+- Exported files in `models/saved/` must match expected names and feature ordering assumptions.
+
+---
 
 ## Project Structure
 
 ```text
 .
-├── app.py                         # Main Streamlit workflow app
+├── app.py
 ├── api/
-│   ├── main.py                    # FastAPI routes
-│   ├── predictor.py               # Inference/model loading
-│   ├── adapt.py                   # Transfer-learning API logic
-│   └── schemas.py                 # Pydantic schemas
+│   ├── main.py
+│   ├── predictor.py
+│   ├── adapt.py
+│   └── schemas.py
+├── notebooks/
+│   ├── 01_data_exploration.ipynb
+│   ├── 02_preprocessing_noise_handling.ipynb
+│   ├── 03_changepoint_anomaly_detection.ipynb
+│   ├── 04_baseline_lstm_rul.ipynb
+│   ├── 05_lstm_dann_domain_adaptation.ipynb
+│   ├── 06_model_evaluation_comparison.ipynb
+│   ├── 07_interpretability.ipynb
+│   ├── 08_model_export_fastapi.ipynb
+│   └── 09_mtda_multi_target_extension.ipynb
 ├── src/
-│   ├── data_loader.py
-│   ├── preprocessor.py
-│   ├── windowing.py
-│   ├── changepoint.py
-│   ├── evaluate.py
-│   ├── explainer.py
-│   ├── feature_aligner.py
-│   ├── fine_tuner.py
-│   ├── train.py
-│   └── models/
-├── notebooks/                     # Experiment and pipeline notebooks
 ├── data/
 │   ├── raw/
 │   └── processed/
-├── models/saved/                  # Exported weights/pipelines
-├── artifacts/                     # Generated artifacts
+├── models/
+│   └── saved/
+├── artifacts/
+├── vhack/
+│   ├── backend/
+│   ├── frontend/
+│   ├── app.py
+│   └── streamlit_app.py
 ├── requirements.txt
 └── Dockerfile
 ```
 
+---
+
 ## Getting Started
 
-### Prerequisites
-
-- Python 3.11+
-- macOS/Linux/Windows
-- Optional: Docker
-
-### 1) Create environment and install dependencies
+### 1) Install dependencies
 
 ```bash
 python -m venv .venv
@@ -177,123 +313,107 @@ pip install -r requirements.txt
 
 ### 2) Prepare data
 
-Place C-MAPSS files under `data/raw/`:
+Place C-MAPSS raw files in `data/raw/` (`train_*`, `test_*`, `RUL_*`).
 
-- `train_FD001.txt` ... `train_FD004.txt`
-- `test_FD001.txt` ... `test_FD004.txt`
-- `RUL_FD001.txt` ... `RUL_FD004.txt`
+### 3) Run notebook pipeline (recommended order)
 
-### 3) Run Streamlit app
+1. `notebooks/01_data_exploration.ipynb`
+2. `notebooks/02_preprocessing_noise_handling.ipynb`
+3. `notebooks/03_changepoint_anomaly_detection.ipynb`
+4. `notebooks/04_baseline_lstm_rul.ipynb`
+5. `notebooks/05_lstm_dann_domain_adaptation.ipynb`
+6. `notebooks/06_model_evaluation_comparison.ipynb`
+7. `notebooks/07_interpretability.ipynb`
+8. `notebooks/08_model_export_fastapi.ipynb`
+9. `notebooks/09_mtda_multi_target_extension.ipynb` (optional/advanced)
 
-```bash
-streamlit run app.py
-```
-
-### 4) Run FastAPI service
+### 4) Run API
 
 ```bash
 uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### 5) API docs
-
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
-
-### 6) Docker (notebook-centric image)
+### 5) Run apps
 
 ```bash
-docker build -t pm-rul .
-docker run --rm -it -p 8888:8888 -v "$PWD":/app pm-rul
+streamlit run app.py
+streamlit run vhack/streamlit_app.py
 ```
+
+---
 
 ## Environment Variables
 
-No mandatory environment variables are required by default.
+No strict mandatory variables are required in the current default setup.
 
-Optional/conventional variables you may use in deployment scripts:
+Common deployment variables:
+- `PYTHONPATH`
+- `HOST`
+- `PORT`
+- `MODELS_DIR` (if externalized in your launcher/scripts)
 
-- `PYTHONPATH` (commonly set to project root, e.g., `/app` in Docker)
-- `HOST` and `PORT` (if wrapping Uvicorn startup in custom scripts)
-- `MODELS_DIR` (if you externalize model directory in your own launcher)
+---
 
 ## API Reference
 
 Base URL (local): `http://localhost:8000`
 
 ### `GET /health`
-
-Returns service liveness.
+Returns API liveness.
 
 ### `GET /models`
-
-Returns available canonical dataset models (e.g., `FD001`–`FD004`) found in `models/saved`.
+Returns available canonical dataset models.
 
 ### `POST /predict`
-
-Predict RUL and health state for one unit.
-
-**Request body**
-
-```json
-{
-  "unit_id": "engine_001",
-  "dataset_id": "FD001",
-  "readings": [[0.1, 0.2, 0.3, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 3.0]]
-}
-```
+Predicts RUL and health state using exported pipeline artifacts.
 
 ### `POST /adapt`
-
-Fine-tune from a base dataset model for a new machine domain.
+Fine-tunes for a new machine domain using uploaded labeled sequences.
 
 ### `POST /predict/adapted`
-
-Predict using an adapted machine-specific pipeline.
+Runs prediction on an adapted machine-specific model.
 
 ### `GET /machines`
+Lists adapted machine IDs available for inference.
 
-List available adapted machine IDs.
+---
 
 ## Challenges Faced
 
-- Handling domain shift across FD datasets and real-like machine feature spaces.
-- Keeping sequence model input shape consistent while supporting variable external sensors.
-- Preserving temporal trends while reducing noise and missing-value impact.
-- Exporting reproducible model pipelines that remain compatible between notebooks, Streamlit, and API runtime.
-- Balancing model performance with explainability and operational readability.
+- Cross-domain drift between datasets and machine types.
+- Preserving temporal signal while suppressing noise.
+- Keeping feature alignment stable when onboarding non-canonical sensors.
+- Ensuring artifact compatibility between notebook training and runtime APIs.
+- Translating technical model outputs into operator-actionable explanations.
+
+---
 
 ## Future Roadmap
 
-- Unify config management (single source for paths, thresholds, hyperparameters).
-- Add formal automated tests for API schema validation and inference contract checks.
-- Add CI pipeline for linting, type checks, and smoke inference tests.
-- Improve artifact/version tracking for reproducible experiment lineage.
-- Add auth/rate-limiting and stricter CORS policies for production API deployment.
-- Expand explainability endpoints and model monitoring hooks.
+- Add stronger experiment tracking/versioned model registry.
+- Add CI for API schema checks and artifact load smoke tests.
+- Expand explainability and monitoring endpoints.
+- Harden production settings (auth, CORS policy, rate limits).
+- Consolidate notebook-to-product handoff into one reproducible release pipeline.
+
+---
 
 ## Troubleshooting
 
-### Model not found errors
+### Artifacts not found
+- Confirm `models/saved/` contains expected exported files from Notebook 08.
 
-Ensure exported pipelines/weights exist under `models/saved/` and names match expected patterns:
+### Inference mismatch
+- Re-check feature order consistency between training pipeline and API input payloads.
 
-- `pm_pipeline_fd001.joblib` (or canonical equivalents)
-- `lstm_target_only_FD001.keras`
-
-### FastAPI cannot start
-
-Install runtime dependencies and verify module path:
-
+### API startup issues
 ```bash
 pip install -r requirements.txt
 uvicorn api.main:app --port 8000
 ```
 
-### Streamlit cannot load data
-
-Ensure all required C-MAPSS raw files are present in `data/raw/`.
+---
 
 ## License
 
-Add your preferred license (e.g., MIT, Apache-2.0) before public distribution.
+Add a license file before public release (e.g., MIT or Apache-2.0).
