@@ -1,0 +1,29 @@
+# SOP-MAIN-04: Standard Operating Procedure for Unscheduled Maintenance & Recovery
+## Version 4.2 | Effective: January 2026
+
+### 1. MTTR (Mean Time To Repair) Benchmarks
+Unscheduled downtime duration is estimated based on the identified failure tier:
+
+| Failure Tier | Example Symptoms | Estimated MTTR (Hours) | Recovery Tier |
+| :--- | :--- | :--- | :--- |
+| **Tier 1 (Minor)** | Lubrication, Loose Sensor | 1.5 - 2.5 | A |
+| **Tier 2 (Moderate)** | Worn Bearing, Seal Leak | 4.0 - 8.0 | B |
+| **Tier 3 (Major)** | Motor Burnout, Gearbox Failure | 12.0 - 24.0 | C |
+| **Tier 4 (Critical)** | Structural Damage, PLC Failure | 48.0+ | D |
+
+### 2. Recovery Cost Tiers (Fixed)
+Recovery costs cover safety inspections, calibration, and energy surges during system restart.
+
+- **Tier A (Basic Restart)**: $350.00
+- **Tier B (Standard Calibration)**: $1,200.00
+- **Tier C (Deep Clean & Validation)**: $2,800.00
+- **Tier D (Full Line Recertification)**: $7,500.00
+
+### 3. Component & Tooling Lead Times
+- **Standard Bearings/Sensors**: In-stock (0 hours delay)
+- **Specialized Motors**: 24-hour sourcing delay (add to MTTR if not on-hand)
+- **Custom Fabricated Parts**: 5-7 days lead time.
+
+### 4. Safety & Compliance
+- **LOTO (Lock-Out Tag-Out)**: Mandatory 30-minute procedure before any repair (included in MTTR).
+- **QA Pass**: All Tier 2+ repairs require 1 hour of QA testing before production resumes.
