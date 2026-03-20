@@ -1,3 +1,13 @@
+# macOS
+.DS_Store
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Generated arrays / artifacts
+/data/processed/*.npy
+/tmp_extract_metrics.py
 __pycache__/
 *.pyc
 *.pyo
