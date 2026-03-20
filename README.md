@@ -338,19 +338,38 @@ Base URL (local): `http://localhost:8000`
 
 ## 11) Challenges Faced (and How Addressed)
 
-- Domain shift between benchmark and real-like data → DANN + feature aligner + adapter.
-- Evaluation integrity issues (window mismatch, scaling mismatch) → fixed with notebook checks.
-- HI quality instability on truncated lifecycles → switched to complete-lifecycle evaluation.
-- Packaging/reuse complexity → standardized artifact outputs in `models/saved/`.
+Even with strong benchmark performance, moving from notebook results to a live factory environment introduces high-stakes engineering constraints.
+
+- **Negative transfer and domain misalignment**: adaptation is not always monotonic; in exploratory MTDA runs, performance can degrade (for example, RMSE around 49.74), showing that “more universal” is not automatically “more accurate.” The main challenge is tuning the balance between a general backbone and machine-specific adaptation.
+- **Sensor heterogeneity and mapping risk**: the shared feature strategy is powerful, but real SMEs have very different sensor counts, sampling rates, and physical units. Preserving signal meaning while mapping a 2-sensor legacy machine and a 15-sensor modern machine into a common inference space remains a core integration challenge.
+- **Trust gap in health indicators**: early HI behavior can be noisy (including near-zero monotonicity before fixes). Even with smoothing and lifecycle-aware evaluation, real plant noise is harsher than simulated datasets, so interpretability and stability must be continuously reinforced for operator trust.
+- **Edge deployment constraints**: the adapter is lightweight, but the full temporal backbone is still computationally heavy for low-cost edge devices. Compression/quantization is required to achieve practical latency and cost targets without giving up adaptation gains.
+- **Data realism gap**: static benchmark datasets do not represent full production variability (maintenance behavior, sensor drift, missingness patterns, operator actions), so robustness must be proven under evolving real-world conditions.
 
 ---
 
 ## 12) Future Roadmap
 
-- Add CI checks for artifact compatibility and API contract tests.
-- Add experiment tracking/versioning for reproducibility at scale.
-- Expand monitoring and drift-detection hooks in serving layer.
-- Harden production API security settings.
+The roadmap shifts from **reactive adaptation (single machine fixes)** to a **proactive fleet intelligence ecosystem**.
+
+### Phase 1 — Short-Term (Technical Refinement)
+
+- **Hyperparameter evolution**: run structured search on adaptation strength ($\lambda$), window size, and regularization to reduce train/validation mismatch and improve generalization stability.
+- **Uncertainty quantification**: add calibrated confidence estimates (for example, Bayesian-style or MC-dropout intervals) so outputs become decision-grade, e.g., “RUL = 84 ± 5 cycles” instead of a single point.
+
+### Phase 2 — Mid-Term (Fleet-Scale Scaling)
+
+- **Active learning feedback loop**: allow operators to flag inaccurate predictions and route verified outcomes back into local adapter updates, turning user interaction into measurable model improvement.
+- **Multi-modal expansion**: extend beyond current sensor channels by integrating acoustic signals (1D-CNN audio branch) to capture early failure signatures that may appear in sound before standard telemetry.
+
+### Phase 3 — Long-Term (Universal Industrial Intelligence)
+
+- **Self-supervised pretraining on unlabeled machine streams**: reduce reliance on a single benchmark origin and learn transferable industrial degradation priors from large, diverse fleet data.
+- **Sustainability intelligence**: add carbon/energy impact analytics to maintenance decisions, linking predictive maintenance actions to measurable efficiency and emissions reduction outcomes.
+
+### Summary for Judges
+
+This project’s practical advantage is **Day-One operational value**: it delivers immediate predictive capability with a clear path to adapt, validate, and scale. The central strategic objective is to convert domain adaptation from a one-off technical fix into a resilient industrial learning loop across entire SME fleets.
 
 ---
 
