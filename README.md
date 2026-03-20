@@ -27,15 +27,32 @@ Artifacts (models/saved, data/processed, artifacts)
 FastAPI runtime (api/)    VHACK application (vhack/backend + vhack/frontend)
 ```
 
-### Architecture Photo Slot A
+### Architecture 1
 
 ![System Architecture Photo 1](assets/system-architecture-1.png)
 
-### Architecture Photo Slot B
+### Architecture for model pipeline 
 
 ![System Architecture Photo 2](assets/system-architecture-2.png)
 
-> Replace the two paths above with your own image paths (or keep these names and place your images in an `assets/` folder).
+- This flowchart outlines an Adversarial Domain Adaptation (ADA) Pipeline designed for industrial Remaining Useful Life (RUL) prediction. It specifically focuses on "Zero-Shot" adaptationapplying a model trained on known datasets (NASA C-MAPSS) to a completely new target environment (AI4I 2020 Factory Data).
+Here is a brief breakdown of the architecture:
+1. Data & Preprocessing
+Sources: It uses NASA’s FD001 and FD003 datasets as "source domains" and AI4I 2020 CNC milling data as the "target domain."
+Techniques: Data is cleaned via Winsorization and Savitzky-Golay smoothing. It employs unit-based train/val splitting to ensure no data leakage between engine units.
+2. Model Architecture
+Deep Backbone: A hybrid CNN-BiLSTM network serves as the feature extractor.
+Domain Adaptation (DANN):
+A Shared Encoder extracts features common to both factory and NASA data.
+A Gradient Reversal Layer (GRL) and Domain Discriminator work together to ensure the features are "domain-invariant" (meaning the model can't tell which dataset the data came from, making it more robust).
+Target Adapter: A lightweight (145 parameters) modular component specifically helps align the model to the new factory environment.
+3. Training Strategy
+Phased Approach: Training starts with the backbone, followed by a "DANN Phase" where adversarial training stabilizes the encoder against domain shifts.
+Health Indicator (HI): The pipeline calculates a composite HI (monotonicity, trendability, and robustness) to validate the quality of the degradation signals.
+
+
+
+
 
 ---
 
