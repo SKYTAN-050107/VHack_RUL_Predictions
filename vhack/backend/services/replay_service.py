@@ -5,6 +5,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Dict, List, Tuple
 import time
+import re
 
 import numpy as np
 import pandas as pd
@@ -34,6 +35,7 @@ class ReplayService:
         self._shap_cache: Dict[Tuple[str, str, int, str, int, int], Dict[str, object]] = {}
         self._replay_points_cache: Dict[Tuple[str, str, int, str, int, int], List[Dict[str, object]]] = {}
         self._reference_scaler_stats: Dict[str, Dict[str, Tuple[float, float]]] = {}
+        self.max_aux_features = 8
 
     def _canonical_dataset_id(self, dataset_id: str) -> str:
         key = (dataset_id or "FD001").upper().strip()
@@ -266,6 +268,31 @@ class ReplayService:
 
         return unit_df[(unit_df["cycle"] >= lo) & (unit_df["cycle"] <= hi)].copy().sort_values("cycle")
 
+    def _build_replay_sensor_frame(self, unit_slice: pd.DataFrame) -> Tuple[pd.DataFrame, List[str]]:
+        """Build inference frame with core 3 features plus normalized auxiliary sensors."""
+        sensor_frame = unit_slice[["cycle", "vibration", "temperature", "load", "actual_rul"]].copy()
+        reading_cols = ["vibration", "temperature", "load"]
+
+        mapping = self._resolve_sensor_mapping(list(unit_slice.columns))
+        base_sensor_cols = {mapping["vibration"], mapping["temperature"], mapping["load"]}
+        sensor_cols = [c for c in unit_slice.columns if re.fullmatch(r"s\d+", str(c))]
+
+        def _sensor_sort_key(name: str) -> int:
+            try:
+                return int(str(name)[1:])
+            except Exception:
+                return 10**9
+
+        aux_candidates = sorted([c for c in sensor_cols if c not in base_sensor_cols], key=_sensor_sort_key)
+
+        for source_col in aux_candidates[: self.max_aux_features]:
+            aux_col = f"aux_{source_col.lower()}"
+            scaled = self._scale_to_range(pd.to_numeric(unit_slice[source_col], errors="coerce"), 0.0, 1.0)
+            sensor_frame[aux_col] = scaled.ffill().bfill().fillna(0.5)
+            reading_cols.append(aux_col)
+
+        return sensor_frame.reset_index(drop=True), reading_cols
+
     def build_replay_payload(
         self,
         dataset_id: str,
@@ -311,7 +338,7 @@ class ReplayService:
             }
 
         mode = model_mode.lower().strip()
-        sensor_frame = unit_slice[["cycle", "vibration", "temperature", "load", "actual_rul"]].reset_index(drop=True)
+        sensor_frame, reading_cols = self._build_replay_sensor_frame(unit_slice)
 
         cache_enabled = not bool(shap_enabled)
         cache_key = (
@@ -339,12 +366,12 @@ class ReplayService:
             if len(window) < self.min_window:
                 # For the first cycles, pad with the earliest row so playback starts
                 # from cycle 1 without returning an empty frame.
-                first_row = window.iloc[[0]][["vibration", "temperature", "load"]]
+                first_row = window.iloc[[0]][reading_cols]
                 pad_count = self.min_window - len(window)
-                padded = pd.concat([first_row] * pad_count + [window[["vibration", "temperature", "load"]]], ignore_index=True)
+                padded = pd.concat([first_row] * pad_count + [window[reading_cols]], ignore_index=True)
                 readings = padded.values.tolist()
             else:
-                readings = window[["vibration", "temperature", "load"]].values.tolist()
+                readings = window[reading_cols].values.tolist()
 
             pred = ml_predictor.run_prediction_with_mode(
                 unit_id=str(unit_id),
@@ -358,24 +385,22 @@ class ReplayService:
             actual_rul = float(window.iloc[-1]["actual_rul"])
             predicted_rul = float(pred["rul_prediction"])
             abs_error = float(abs(predicted_rul - actual_rul))
-            points.append(
-                {
-                    "cycle": cycle,
-                    "vibration": float(window.iloc[-1]["vibration"]),
-                    "temperature": float(window.iloc[-1]["temperature"]),
-                    "load": float(window.iloc[-1]["load"]),
-                    "predicted_rul": round(predicted_rul, 2),
-                    "actual_rul": round(actual_rul, 2),
-                    "abs_error": round(abs_error, 2),
-                    "health_state": pred.get("health_state", "Unknown"),
-                    "dataset_id": pred.get("dataset_id", self._canonical_dataset_id(dataset_id)),
-                    "model_mode": mode,
-                    "inference_mode": pred.get("inference_mode", "model"),
-                    "fallback_used": bool(pred.get("fallback_used", False)),
-                    "fallback_reason": pred.get("fallback_reason"),
-                    "is_true_adaptation": bool(pred.get("is_true_adaptation", False)),
-                }
-            )
+            point = {
+                "cycle": cycle,
+                "predicted_rul": round(predicted_rul, 2),
+                "actual_rul": round(actual_rul, 2),
+                "abs_error": round(abs_error, 2),
+                "health_state": pred.get("health_state", "Unknown"),
+                "dataset_id": pred.get("dataset_id", self._canonical_dataset_id(dataset_id)),
+                "model_mode": mode,
+                "inference_mode": pred.get("inference_mode", "model"),
+                "fallback_used": bool(pred.get("fallback_used", False)),
+                "fallback_reason": pred.get("fallback_reason"),
+                "is_true_adaptation": bool(pred.get("is_true_adaptation", False)),
+            }
+            for col in reading_cols:
+                point[col] = float(window.iloc[-1][col])
+            points.append(point)
 
             should_compute_shap = bool(shap_enabled) and (cycle % shap_interval == 0 or idx == len(sensor_frame) - 1)
             if should_compute_shap:
@@ -439,6 +464,8 @@ class ReplayService:
                 "range_start": int(sensor_frame["cycle"].min()),
                 "range_end": int(sensor_frame["cycle"].max()),
                 "points_in_range": int(len(points)),
+                "inference_feature_count": int(len(reading_cols)),
+                "inference_features": reading_cols,
             },
             "series": points,
             "kpi": kpi,

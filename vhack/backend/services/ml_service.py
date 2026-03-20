@@ -4,6 +4,7 @@ from typing import Dict, Any, Optional
 from services.database import supabase
 from datetime import datetime
 from pathlib import Path
+import re
 from services import ml_predictor
 from utils.logger import log_error
 
@@ -15,6 +16,7 @@ class MLService:
 
     def __init__(self):
         self.models_dir = str((Path(__file__).resolve().parents[1] / "models" / "saved"))
+        self.max_aux_features = 8
 
     def _sensor_aliases(self) -> Dict[str, list]:
         return {
@@ -103,6 +105,27 @@ class MLService:
                 "load": pd.to_numeric(csv_data[selected["load"]], errors="coerce"),
             }
         )
+
+        selected_source_cols = set(selected.values())
+        extra_numeric = []
+        for col in numeric_df.columns:
+            if col in selected_source_cols:
+                continue
+            clean = pd.to_numeric(numeric_df[col], errors="coerce")
+            non_null = int(clean.notna().sum())
+            if non_null > 0:
+                extra_numeric.append((col, non_null))
+
+        extra_numeric.sort(key=lambda item: item[1], reverse=True)
+        for raw_col, _ in extra_numeric[: self.max_aux_features]:
+            safe_name = re.sub(r"[^a-zA-Z0-9]+", "_", str(raw_col).strip().lower()).strip("_") or "feature"
+            aux_name = f"aux_{safe_name}"
+            suffix = 2
+            while aux_name in sensor_df.columns:
+                aux_name = f"aux_{safe_name}_{suffix}"
+                suffix += 1
+            sensor_df[aux_name] = pd.to_numeric(csv_data[raw_col], errors="coerce")
+
         sensor_df = sensor_df.dropna(how="all")
 
         if sensor_df.empty:
@@ -167,6 +190,13 @@ class MLService:
 
             in_range_ratio = float(series.between(lo, hi, inclusive="both").mean()) if len(series) else 0.0
             normalized[col] = series if in_range_ratio >= 0.85 else self._scale_to_range(series, lo, hi)
+
+        # Keep auxiliary numeric channels bounded for stable multi-feature inference.
+        for col in normalized.columns:
+            if col in targets:
+                continue
+            series = pd.to_numeric(normalized[col], errors="coerce")
+            normalized[col] = self._scale_to_range(series, 0.0, 1.0)
 
         return normalized
 

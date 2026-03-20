@@ -206,9 +206,14 @@ def _render_frame(fetch: bool):
             st.line_chart(df.set_index("cycle")[["abs_error"]])
 
         st.subheader("Sensor Trends")
-        sensor_cols = [c for c in ["vibration", "temperature", "load"] if c in df.columns]
+        sensor_cols = [
+            c
+            for c in df.columns
+            if c in {"vibration", "temperature", "load"} or str(c).startswith("aux_")
+        ]
         if sensor_cols:
             st.line_chart(df.set_index("cycle")[sensor_cols])
+            st.caption(f"Showing {len(sensor_cols)} sensor features used for replay inference.")
 
     table_box = st.container()
     with table_box:

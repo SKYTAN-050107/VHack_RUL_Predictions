@@ -2,6 +2,7 @@ import numpy as np
 import joblib
 from pathlib import Path
 import re
+import os
 from typing import Any, Dict, List, Optional
 import sys
 import types
@@ -17,6 +18,26 @@ _CANONICAL_DATASET_IDS = {"FD001", "FD002", "FD003", "FD004"}
 _ADAPTED_RUNTIME_REGISTRY: Dict[str, Dict[str, Any]] = {}
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _MISC_DIR = _PROJECT_ROOT / "misc"
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return float(default)
+    try:
+        value = float(raw)
+    except Exception:
+        return float(default)
+    if not np.isfinite(value):
+        return float(default)
+    return float(value)
 
 
 def _dedupe_paths(paths: List[Path]) -> List[Path]:
@@ -268,15 +289,25 @@ def _calibrate_adapted_rul(raw_adapted_rul: float, base_rul: float) -> float:
     cycle counts. When that happens, anchor adapted output to base RUL and use
     a bounded multiplier derived from sigmoid(raw).
     """
-    if np.isfinite(raw_adapted_rul) and raw_adapted_rul > 5.0:
+    direct_threshold = max(0.0, _env_float("ADAPTED_DIRECT_RUL_THRESHOLD", 500.0))
+    sigmoid_clip = max(1.0, _env_float("ADAPTED_SIGMOID_CLIP", 8.0))
+    multiplier_center = _env_float("ADAPTED_MULTIPLIER_CENTER", 1.0)
+    multiplier_span = max(0.0, _env_float("ADAPTED_MULTIPLIER_SPAN", 0.5))
+    anchor_weight = min(1.0, max(0.0, _env_float("ADAPTED_ANCHOR_WEIGHT", 1.0)))
+    floor_ratio = min(1.0, max(0.0, _env_float("ADAPTED_FLOOR_RATIO", 0.0)))
+
+    if np.isfinite(raw_adapted_rul) and raw_adapted_rul > direct_threshold:
         return float(raw_adapted_rul)
 
     if not np.isfinite(base_rul) or base_rul <= 0.0:
         base_rul = 250.0
 
-    bounded = 1.0 / (1.0 + np.exp(-float(np.clip(raw_adapted_rul, -8.0, 8.0))))
-    multiplier = 0.75 + 0.5 * float(bounded)  # range: [0.75, 1.25]
-    return float(max(0.0, base_rul * multiplier))
+    bounded = 1.0 / (1.0 + np.exp(-float(np.clip(raw_adapted_rul, -sigmoid_clip, sigmoid_clip))))
+    multiplier = (multiplier_center - 0.5 * multiplier_span) + multiplier_span * float(bounded)
+    mapped = float(base_rul * multiplier)
+    blended = anchor_weight * mapped + (1.0 - anchor_weight) * float(base_rul)
+    floor_value = float(base_rul * floor_ratio)
+    return float(max(0.0, max(floor_value, blended)))
 
 
 def _apply_conservative_rul_bias(rul: float) -> float:
@@ -287,6 +318,31 @@ def _apply_conservative_rul_bias(rul: float) -> float:
     if value <= 150.0:
         return value * 0.90
     return value * 0.80
+
+
+def _adapted_postprocess(raw_adapted_rul: float, base_rul: float) -> Dict[str, Any]:
+    """Return staged adapted RUL values for auditability and safer tuning."""
+    calibration_enabled = _env_flag("ADAPTED_ENABLE_CALIBRATION", True)
+    conservative_bias_enabled = _env_flag("ADAPTED_ENABLE_CONSERVATIVE_BIAS", False)
+
+    if calibration_enabled:
+        calibrated_rul = _calibrate_adapted_rul(raw_adapted_rul=raw_adapted_rul, base_rul=base_rul)
+    else:
+        calibrated_rul = float(raw_adapted_rul)
+
+    if conservative_bias_enabled:
+        final_rul = _apply_conservative_rul_bias(calibrated_rul)
+    else:
+        final_rul = float(max(0.0, calibrated_rul))
+
+    return {
+        "raw_adapted_rul": float(raw_adapted_rul),
+        "base_anchor_rul": float(base_rul),
+        "calibrated_rul": float(calibrated_rul),
+        "final_rul": float(final_rul),
+        "calibration_enabled": bool(calibration_enabled),
+        "conservative_bias_enabled": bool(conservative_bias_enabled),
+    }
 
 
 def _predict_from_serialized_pipeline_state(state_obj: object, x_raw: np.ndarray) -> dict:
@@ -303,18 +359,15 @@ def _predict_from_serialized_pipeline_state(state_obj: object, x_raw: np.ndarray
     if np.isfinite(raw_rul) and raw_rul > 5.0:
         rul = float(raw_rul)
     else:
-        # Map logit-like outputs into cycle space and blend with heuristic anchor
-        # to avoid collapsed near-zero predictions. Preserve high-life regimes
-        # by trusting heuristic anchor more when mapped output is far lower.
+        # Map logit-like outputs into cycle space with a fixed anchor to avoid
+        # heuristic fallback behavior while still preventing zero-collapse.
         bounded = 1.0 / (1.0 + np.exp(-float(np.clip(raw_rul, -8.0, 8.0))))
         mapped = float(bounded * max_rul)
-        heuristic_anchor = float(_heuristic_predict(x_raw, fallback_reason="compat_anchor")["rul_prediction"])
-        if heuristic_anchor > 150.0 and mapped < 0.65 * heuristic_anchor:
-            rul = 0.15 * mapped + 0.85 * heuristic_anchor
-        else:
-            rul = 0.45 * mapped + 0.55 * heuristic_anchor
+        anchor = max(50.0, min(max_rul, _env_float("ADAPTED_BASE_ANCHOR_RUL", 250.0)))
+        rul = 0.45 * mapped + 0.55 * anchor
 
-    rul = _apply_conservative_rul_bias(rul)
+    if _env_flag("ADAPTED_ENABLE_CONSERVATIVE_BIAS", False):
+        rul = _apply_conservative_rul_bias(rul)
 
     cp_detected = _detect_change_point(x_raw)
     return {
@@ -355,20 +408,15 @@ class GeneralisedMaintenancePipeline:
             try:
                 return _predict_from_serialized_pipeline_state(self, x_raw)
             except Exception as exc:
-                # Fallback only if compatibility path fails.
-                _log_fallback_once(
-                    "missing_estimator",
-                    f"Model object has no estimator with predict(); compatibility runtime failed ({str(exc)}); using heuristic fallback",
-                )
-                return _heuristic_predict(x_raw, fallback_reason="missing_estimator")
+                raise RuntimeError(
+                    "Model object has no estimator with predict(), and compatibility runtime failed: "
+                    f"{str(exc)}"
+                ) from exc
 
         raw_pred = estimator.predict(x_raw)
         pred_val = float(np.ravel(raw_pred)[-1])
         if not np.isfinite(pred_val) or pred_val <= 0.0:
-            # Guardrail for incompatible preprocessing/model artifacts producing
-            # collapsed outputs (e.g., all-zero RUL traces).
-            _log_fallback_once("invalid_model_output", f"Invalid model output '{pred_val}'; using heuristic fallback")
-            return _heuristic_predict(x_raw, fallback_reason="invalid_model_output")
+            raise RuntimeError(f"Invalid model output '{pred_val}' from loaded estimator")
         cp_detected = _detect_change_point(x_raw)
         return {
             "rul_prediction": max(0.0, pred_val),
@@ -378,13 +426,6 @@ class GeneralisedMaintenancePipeline:
             "__fallback_used": False,
             "__execution_mode": "model",
         }
-
-
-class _HeuristicPipeline:
-    """Safe fallback to keep the app running if model unpickling fails."""
-
-    def predict(self, x_raw: np.ndarray) -> dict:
-        return _heuristic_predict(x_raw, fallback_reason="model_load_failure")
 
 
 def _register_pickle_compat_symbols():
@@ -519,14 +560,14 @@ def load_pipeline(dataset_id: str, models_dir: str = "models/saved"):
             }
             log_action("2", "Loaded ML pipeline", f"dataset={key}, path={path.name}")
         except Exception as exc:
-            _MODEL_REGISTRY[key] = _HeuristicPipeline()
             _MODEL_RUNTIME_META[key] = {
                 "pipeline_source": str(path),
                 "model_loaded": False,
-                "fallback_used": True,
-                "fallback_reason": "model_load_failure",
+                "fallback_used": False,
+                "fallback_reason": None,
             }
-            log_error("2", f"Failed to load model '{path.name}' for dataset={key}: {str(exc)}. Using heuristic fallback.")
+            log_error("2", f"Failed to load model '{path.name}' for dataset={key}: {str(exc)}")
+            raise RuntimeError(f"Failed to load model '{path.name}' for dataset={key}: {str(exc)}") from exc
     return _MODEL_REGISTRY[key]
 
 
@@ -641,13 +682,12 @@ def _run_adapted_prediction(unit_id: str, dataset_id: str, readings: list, model
         raise ValueError("readings must be a 2D array-like with at least 3 features per row")
 
     try:
-        # Keep adapted replay responsive by using a lightweight anchor instead of
-        # running an additional base-model inference for every timeline point.
-        base_rul = float(_heuristic_predict(x_raw, fallback_reason="adapted_anchor").get("rul_prediction", 250.0))
+        # Use deterministic fixed anchor for calibration; no heuristic fallback.
+        base_rul = max(50.0, _env_float("ADAPTED_BASE_ANCHOR_RUL", 250.0))
         runtime = _load_adapted_runtime()
         raw_adapted_rul = _run_true_adapted_inference(runtime, x_raw)
-        adjusted_rul = _calibrate_adapted_rul(raw_adapted_rul=raw_adapted_rul, base_rul=base_rul)
-        adjusted_rul = _apply_conservative_rul_bias(adjusted_rul)
+        post = _adapted_postprocess(raw_adapted_rul=raw_adapted_rul, base_rul=base_rul)
+        adjusted_rul = float(post["final_rul"])
     except Exception as exc:
         raise RuntimeError(f"Adapted inference failed: {str(exc)}") from exc
 
@@ -667,6 +707,14 @@ def _run_adapted_prediction(unit_id: str, dataset_id: str, readings: list, model
         "is_true_adaptation": True,
         "fallback_used": False,
         "fallback_reason": None,
+        "debug": {
+            "raw_adapted_rul": round(float(post["raw_adapted_rul"]), 4),
+            "base_anchor_rul": round(float(post["base_anchor_rul"]), 4),
+            "calibrated_rul": round(float(post["calibrated_rul"]), 4),
+            "final_rul": round(float(post["final_rul"]), 4),
+            "calibration_enabled": bool(post["calibration_enabled"]),
+            "conservative_bias_enabled": bool(post["conservative_bias_enabled"]),
+        },
     }
 
 

@@ -98,7 +98,7 @@ def create_maintenance_work_order(payload: Dict[str, Any]) -> Dict[str, Any]:
     return response.json()
 
 
-st.title("C-MAPSS Replay Overview")
+st.title("Dashboard Overview")
 
 PAGE_KEY = "frontend_replay"
 STEP_CYCLES = 4
@@ -148,8 +148,7 @@ except Exception as exc:
 range_start = int(range_info.get("range_start", 1))
 range_end = int(range_info.get("range_end", range_start))
 
-st.subheader("Why RUL Is Dropping (Engine Unit Insight)")
-if st.button("Explain My RUL", type="primary"):
+if st.button("Explain My Machine Expectancy Dropping?", type="primary"):
     try:
         insight_end_cycle = int(st.session_state.get(f"{PAGE_KEY}_playhead", range_end))
         insight_end_cycle = max(range_start, min(insight_end_cycle, range_end))
@@ -405,30 +404,46 @@ def _render_frame(fetch: bool):
         return
 
     df = pd.DataFrame(series).sort_values("cycle")
+    if "predicted_rul" in df.columns and "actual_rul" in df.columns:
+        df["rul_diff"] = (df["predicted_rul"] - df["actual_rul"]).round(2)
 
     kpi_box = st.container()
     with kpi_box:
-        metric_cols = st.columns(4)
+        metric_cols = st.columns(5)
         if kpi:
             metric_cols[0].metric("Predicted RUL", f"{kpi.get('predicted_rul', 0):.2f}", delta=kpi.get("predicted_delta"))
-            metric_cols[1].metric("Trend", str((kpi.get("predicted_delta") or "stable")))
-            metric_cols[2].metric("Current Health", str(kpi.get("health_state", "N/A")))
-        metric_cols[3].metric("Points", metadata.get("points_in_range", len(df)))
+            metric_cols[1].metric("Actual RUL", f"{kpi.get('actual_rul', 0):.2f}", delta=kpi.get("actual_delta"))
+            signed_diff = float(kpi.get("predicted_rul", 0.0)) - float(kpi.get("actual_rul", 0.0))
+            metric_cols[2].metric("RUL Diff (Pred-Actual)", f"{signed_diff:.2f}")
+            metric_cols[3].metric("Abs Error", f"{kpi.get('abs_error', 0):.2f}")
+        metric_cols[4].metric("Points", metadata.get("points_in_range", len(df)))
+        st.caption(f"Current Health: {str(df.iloc[-1].get('health_state', 'N/A'))}")
 
     charts_box = st.container()
     with charts_box:
         st.subheader("RUL Tracking")
-        st.line_chart(df.set_index("cycle")[["predicted_rul"]])
+        rul_cols = [c for c in ["actual_rul", "predicted_rul"] if c in df.columns]
+        if rul_cols:
+            st.line_chart(df.set_index("cycle")[rul_cols])
 
         st.subheader("Sensor Trends")
-        sensor_cols = [c for c in ["vibration", "temperature", "load"] if c in df.columns]
+        sensor_cols = [
+            c
+            for c in df.columns
+            if c in {"vibration", "temperature", "load"} or str(c).startswith("aux_")
+        ]
         if sensor_cols:
             st.line_chart(df.set_index("cycle")[sensor_cols])
+            st.caption(f"Showing {len(sensor_cols)} sensor features used for replay inference.")
+
+        if "rul_diff" in df.columns:
+            st.subheader("RUL Diff (Predicted - Actual)")
+            st.line_chart(df.set_index("cycle")[["rul_diff"]])
 
     table_box = st.container()
     with table_box:
         st.dataframe(
-            df[[c for c in ["cycle", "predicted_rul", "health_state"] if c in df.columns]],
+            df[[c for c in ["cycle", "predicted_rul", "actual_rul", "rul_diff", "abs_error", "health_state"] if c in df.columns]],
             hide_index=True,
             use_container_width=True,
         )
