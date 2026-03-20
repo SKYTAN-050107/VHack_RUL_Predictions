@@ -27,6 +27,16 @@ Artifacts (models/saved, data/processed, artifacts)
 FastAPI runtime (api/)    VHACK application (vhack/backend + vhack/frontend)
 ```
 
+### Architecture Photo Slot A
+
+![System Architecture Photo 1](assets/system-architecture-1.png)
+
+### Architecture Photo Slot B
+
+![System Architecture Photo 2](assets/system-architecture-2.png)
+
+> Replace the two paths above with your own image paths (or keep these names and place your images in an `assets/` folder).
+
 ---
 
 ## 2) What Makes This Transparent for Judging
