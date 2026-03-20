@@ -1,308 +1,264 @@
-# Predictive Maintenance Platform (NASA C-MAPSS + VHACK Application)
+# Predictive Maintenance Platform (NASA C-MAPSS + VHACK Product)
 
-This repository is split into two connected parts:
+This project is built to be **auditable by judges**: every major modeling choice is demonstrated in notebooks, metrics are reported from saved outputs, and deployment artifacts are explicitly linked to backend/frontend usage.
 
-1. **Model development pipeline** (notebooks + `src/`): ingest, preprocess, train, evaluate, explain, and export artifacts.
-2. **Application layer** (`vhack/` and API): consume exported artifacts for backend inference and frontend product workflows.
+## Executive Summary
 
----
-
-## Table of Contents
-
-- [System Architecture](#system-architecture)
-- [Features](#features)
-- [Tech Stack](#tech-stack)
-- [Technical Architecture](#technical-architecture)
-- [Notebook-by-Notebook Workflow and Usage](#notebook-by-notebook-workflow-and-usage)
-- [Artifact Contract (What Feeds Frontend/Backend)](#artifact-contract-what-feeds-frontendbackend)
-- [Project Structure](#project-structure)
-- [Getting Started](#getting-started)
-- [Environment Variables](#environment-variables)
-- [API Reference](#api-reference)
-- [Challenges Faced](#challenges-faced)
-- [Future Roadmap](#future-roadmap)
-- [Troubleshooting](#troubleshooting)
-- [License](#license)
+- Problem: Predict Remaining Useful Life (RUL) and machine health state for industrial assets.
+- Approach: Sequence modeling (LSTM / CNN-BiLSTM), domain adaptation (DANN), and explainability.
+- Evidence: Notebook-driven experiments with exported artifacts used directly by APIs and apps.
+- Productization: `api/` for serving and `vhack/` for backend + frontend user workflows.
 
 ---
 
-## System Architecture
+## 1) System Architecture
 
 ```text
-┌───────────────────────────────────────────────────────────────────┐
-│                    DATA & EXPERIMENT LAYER                       │
-│   notebooks/ + src/ + data/raw/ + data/processed/ + artifacts/   │
-└───────────────────────────────┬───────────────────────────────────┘
-                                │ exports trained weights/pipelines
-                                ▼
-┌───────────────────────────────────────────────────────────────────┐
-│                    MODEL ARTIFACT LAYER                          │
-│      models/saved/*.keras, *.weights.h5, *.joblib, *.npy        │
-└───────────────────────────────┬───────────────────────────────────┘
-                                │ consumed by
-             ┌──────────────────┴──────────────────┐
-             ▼                                     ▼
-┌──────────────────────────────┐        ┌──────────────────────────────┐
-│ API Runtime (api/)           │        │ VHACK Product (vhack/)       │
-│ /predict, /adapt, /machines  │        │ backend + frontend + app UI  │
-└──────────────────────────────┘        └──────────────────────────────┘
+Raw data (data/raw) + external target data (AI4I)
+            │
+            ▼
+Notebook pipeline (notebooks/01..09) + core modules (src/)
+            │  - preprocess / window / train / evaluate / explain / export
+            ▼
+Artifacts (models/saved, data/processed, artifacts)
+            │
+     ┌──────┴─────────────┐
+     ▼                    ▼
+FastAPI runtime (api/)    VHACK application (vhack/backend + vhack/frontend)
 ```
 
 ---
 
-## Features
+## 2) What Makes This Transparent for Judging
 
-- End-to-end RUL pipeline for FD001–FD004 datasets.
-- Noise handling, missing-data simulation/imputation, and feature scaling.
-- Baseline LSTM training and DANN-based cross-domain adaptation.
-- Change-point detection and health-state classification.
-- Explainability pipeline for feature attribution and operator-facing interpretation.
-- Exported reusable model pipelines for API serving.
-- Transfer-learning path for onboarding new machine domains.
-- Product-facing VHACK application integration (frontend + backend).
+- **Notebook-first evidence trail:** each stage is separated and inspectable.
+- **Model-choice rationale documented:** baseline vs adapted models are compared quantitatively.
+- **Metric reporting is explicit:** RMSE, MAE, NASA score, and HI quality metrics are shown.
+- **Deployment traceability:** exported files are mapped to API and app consumers.
+- **Known limitations stated:** where data/domain mismatch affects performance.
 
 ---
 
-## Tech Stack
+## 3) Tech Stack
 
-- **Language:** Python
-- **Data/ML:** NumPy, Pandas, SciPy, scikit-learn, TensorFlow/Keras, SHAP, Ruptures
-- **Visualization:** Matplotlib, Seaborn, Plotly
-- **Serving:** FastAPI, Uvicorn, Pydantic
-- **Apps:** Streamlit (root app and VHACK app)
-- **Persistence:** Joblib, NPY, Keras/H5 model weights
-- **Containerization:** Docker
+- Language: Python
+- Data/ML: NumPy, Pandas, SciPy, scikit-learn, TensorFlow/Keras, SHAP, Ruptures
+- Visualization: Matplotlib, Seaborn, Plotly
+- Serving: FastAPI, Uvicorn, Pydantic
+- UI/Product: Streamlit (`app.py`, `vhack/streamlit_app.py`)
+- Persistence: Joblib, `.keras`, `.weights.h5`, `.npy`
+- Environment: `venv`, pip, Docker
 
 ---
 
-## Technical Architecture
+## 4) Technical Architecture
 
-### Core modules (`src/`)
+### Core ML modules (`src/`)
 
 - `data_loader.py`: loads C-MAPSS train/test/RUL splits.
-- `preprocessor.py`: smoothing, missing-value handling, normalization, piecewise RUL.
-- `windowing.py`: sequence window generation for temporal models.
-- `models/`: baseline and adaptation model definitions.
-- `train.py`: model training loop(s), including adversarial training flow.
-- `changepoint.py`: CUSUM-based transition detection and health state logic.
-- `evaluate.py`: RMSE, MAE, NASA score, model comparison utilities.
-- `explainer.py`: explainability helpers used in interpretation steps.
-- `feature_aligner.py`, `fine_tuner.py`: adaptation/transfer-learning utilities.
+- `preprocessor.py`: smoothing, imputation, normalization, piecewise RUL.
+- `windowing.py`: sequence construction for temporal models.
+- `models/`: LSTM, CNN-LSTM, DANN model builders.
+- `train.py`: adversarial training loops and optimization logic.
+- `changepoint.py`: change-point detection + health-state classification.
+- `evaluate.py`: RMSE/MAE/NASA scoring utilities.
+- `explainer.py`: explainability wrappers.
+- `feature_aligner.py`, `fine_tuner.py`: cross-domain transfer/fine-tuning path.
 
-### Serving modules (`api/`)
+### Serving (`api/`)
 
-- `main.py`: API routes (`/health`, `/models`, `/predict`, `/adapt`, `/predict/adapted`, `/machines`).
-- `predictor.py`: model registry/load/predict orchestration.
+- `main.py`: REST routes (`/predict`, `/adapt`, etc.).
+- `predictor.py`: model registry/load/predict pipeline.
 - `adapt.py`: machine-specific adaptation and adapted inference.
-- `schemas.py`: request/response data contracts.
+- `schemas.py`: validated request/response schema contracts.
 
-### Product modules (`vhack/`)
+### Product (`vhack/`)
 
-- `vhack/backend/`: backend services and routers.
-- `vhack/frontend/`: frontend pages and app-level interactions.
-- `vhack/app.py`, `vhack/streamlit_app.py`: app entry points.
-- Uses artifacts produced by notebook/model pipeline.
-
----
-
-## Notebook-by-Notebook Workflow and Usage
-
-This is the exact progression of your model-development lifecycle and how each notebook contributes to the production stack.
-
-### 1) `notebooks/01_data_exploration.ipynb`
-
-**What you did**
-- Loaded raw C-MAPSS datasets and validated structure/columns.
-- Explored engine lifecycle distributions and sensor behavior.
-- Identified dataset differences across FD subsets.
-
-**Why it matters**
-- Established baseline understanding of signal quality and operating regimes before preprocessing.
-
-**Used by**
-- Guides decisions in Notebook 02 (smoothing, imputation, normalization strategy).
+- `vhack/backend/`: business/API/service orchestration.
+- `vhack/frontend/` and `vhack/pages/`: operator interfaces.
+- Consumes exported model artifacts from notebook pipeline.
 
 ---
 
-### 2) `notebooks/02_preprocessing_noise_handling.ipynb`
+## 5) Notebook-by-Notebook Methodology, Model Choice, and Usage
 
-**What you did**
-- Applied noise reduction and missing-value handling.
-- Built normalized training inputs and consistent feature processing.
-- Prepared train-ready arrays/tables for downstream sequence modeling.
+### Notebook 01 — `notebooks/01_data_exploration.ipynb`
 
-**Typical outputs**
-- Processed datasets in `data/processed/` (for example window-ready arrays/cleaned tables).
+**Concept used**
+- Exploratory data analysis on C-MAPSS regimes and sensor distributions.
 
-**Used by**
-- Notebook 03, 04, 05, and downstream API export path.
+**Why this model/data decision**
+- Confirms feature availability and behavior before model design.
 
----
-
-### 3) `notebooks/03_changepoint_anomaly_detection.ipynb`
-
-**What you did**
-- Implemented and tuned transition/anomaly detection (CUSUM-style logic).
-- Estimated health-transition points across engine trajectories.
-- Mapped transitions to health states for operations context.
-
-**Typical outputs**
-- Change-point/health diagnostics (plots/tables/artifacts as applicable).
-
-**Used by**
-- Prediction explainability and API response enrichment (`health_state`, transition signals).
+**Usage in pipeline**
+- Drives preprocessing assumptions used in Notebook 02.
 
 ---
 
-### 4) `notebooks/04_baseline_lstm_rul.ipynb`
+### Notebook 02 — `notebooks/02_preprocessing_noise_handling.ipynb`
 
-**What you did**
-- Trained baseline sequence model for RUL prediction.
-- Tuned/validated baseline behavior on canonical dataset setup.
-- Established baseline metrics for future comparison.
+**Concept used**
+- Savitzky-Golay smoothing, imputation, min-max scaling, and window-ready preparation.
 
-**Typical outputs**
-- Baseline model weights under `models/saved/`.
+**Why this decision**
+- Sequence models are sensitive to noise/missing values and scale inconsistencies.
 
-**Used by**
-- Notebook 05 (as base for adaptation experiments), 06 (comparison), and 08 (export).
+**Usage in pipeline**
+- Produces normalized inputs for training/evaluation notebooks and runtime consistency.
 
 ---
 
-### 5) `notebooks/05_lstm_dann_domain_adaptation.ipynb`
+### Notebook 03 — `notebooks/03_changepoint_anomaly_detection.ipynb`
 
-**What you did**
-- Ran domain-adversarial training for cross-domain robustness.
-- Trained feature extractor + regressor + domain classifier setup.
-- Benchmarked transfer/generalization behavior across dataset pairs.
+**Concept used**
+- CUSUM-like transition detection for health-state shift detection.
 
-**Typical outputs**
-- DANN-related weights/adapters/scalers in `models/saved/`.
+**Why this decision**
+- RUL value alone is not enough for operations; state transitions improve actionability.
 
-**Used by**
-- Notebook 06 for comparative evaluation and Notebook 08/09 for deployable adaptation paths.
+**Usage in pipeline**
+- Health-state logic and transition cues feed explanation layer and API outputs.
 
 ---
 
-### 6) `notebooks/06_model_evaluation_comparison.ipynb`
+### Notebook 04 — `notebooks/04_baseline_lstm_rul.ipynb`
 
-**What you did**
-- Compared baseline vs adaptation model families using common metrics.
-- Consolidated RMSE/MAE/NASA score-style reporting.
-- Assessed error profiles and trade-offs for deployment selection.
+**Concept/model used**
+- Baseline temporal models including pure LSTM and CNN-BiLSTM variants.
 
-**Typical outputs**
-- Evaluation summaries/charts used to choose production candidates.
+**Why this decision**
+- Establishes a strong in-domain benchmark before adaptation.
 
-**Used by**
-- Notebook 08 model-export decisions and product readiness checks.
+**Usage in pipeline**
+- Produces baseline weights consumed by Notebook 06 and export/deployment paths.
 
 ---
 
-### 7) `notebooks/07_interpretability.ipynb`
+### Notebook 05 — `notebooks/05_lstm_dann_domain_adaptation.ipynb`
 
-**What you did**
-- Generated feature-attribution analyses (SHAP-style workflow).
-- Interpreted key sensor contributions to predicted RUL.
-- Produced operator-facing explanatory evidence.
+**Concept/model used**
+- DANN (Domain-Adversarial Neural Network) with feature-space alignment and adapter.
 
-**Typical outputs**
-- Explainability visual assets and feature-importance interpretation artifacts.
+**Why this decision**
+- Addresses domain shift (FD001 → AI4I) where source-only models degrade.
 
-**Used by**
-- API/business explanation logic and stakeholder trust/readability.
+**Usage in pipeline**
+- Produces adapted weights/scalers/adapter artifacts used in Notebook 06 and serving.
 
 ---
 
-### 8) `notebooks/08_model_export_fastapi.ipynb`
+### Notebook 06 — `notebooks/06_model_evaluation_comparison.ipynb`
 
-**What you did**
-- Wrapped trained components into deployable pipeline artifacts.
-- Exported model/scaler/aligner bundles for runtime loading.
-- Validated FastAPI serving contract against exported assets.
+**Concept/model used**
+- Controlled comparison across:
+  - Pure LSTM (source-only)
+  - CNN-BiLSTM (source-only)
+  - CNN-LSTM-DANN (adapted)
+- Uses RMSE, MAE, NASA score, and HI quality metrics.
 
-**Typical outputs**
-- `models/saved/pm_pipeline_*.joblib`
-- Runtime-compatible model files required by `api/`.
+**Why this decision**
+- Provides judge-friendly evidence that adaptation improves transfer performance.
 
-**Used by**
-- `api/main.py` and `api/predictor.py` endpoints.
-- Backend flows that power product-facing predictions.
+**Metrics obtained (from saved Notebook 06 outputs)**
 
----
+1) **FD001 In-domain**
+- Pure LSTM (FD001): RMSE **34.96**, MAE **26.93**, NASA **3239**
+- CNN-LSTM / CNN-BiLSTM (FD001): RMSE **18.85**, MAE **15.30**, NASA **566**
 
-### 9) `notebooks/09_mtda_multi_target_extension.ipynb`
+2) **Cross-domain FD001 → AI4I (full lifecycle windows)**
+- LSTM Source-Only: RMSE **33.23**
+- CNN-LSTM Source-Only: RMSE **30.59**
+- CNN-LSTM-DANN (Adapted): RMSE **23.94**
 
-**What you did**
-- Extended adaptation to multi-target or broader transfer scenarios.
-- Tested scaling adaptation logic beyond single source-target setup.
-- Investigated robustness for real deployment diversity.
+3) **Health Indicator quality (FD001 train lifecycle)**
+- Monotonicity: **0.7204**
+- Trendability: **0.9513**
+- Robustness: **0.6792**
+- Composite: **0.7837**
 
-**Typical outputs**
-- Extended adaptation artifacts/configuration candidates.
+4) **Checklist status**
+- Targets passed: **5 / 5**
 
-**Used by**
-- Future-ready transfer learning pipeline and new-machine onboarding.
-
----
-
-## Artifact Contract (What Feeds Frontend/Backend)
-
-Your application layer relies on artifacts generated in the notebook pipeline.
-
-### Artifact producers
-- Notebooks 04/05/08/09 and related `src/` modules.
-
-### Artifact consumers
-- API: `api/predictor.py`, `api/adapt.py`
-- Product stack: `vhack/backend/` services and frontend-driven prediction workflows.
-
-### Key runtime expectation
-- Exported files in `models/saved/` must match expected names and feature ordering assumptions.
+**Usage in pipeline**
+- This notebook is your primary evidence/reporting notebook for judges.
 
 ---
 
-## Project Structure
+### Notebook 07 — `notebooks/07_interpretability.ipynb`
+
+**Concept/model used**
+- SHAP-style interpretation for feature contribution analysis.
+
+**Why this decision**
+- Improves trust and supports operator-facing reasoning.
+
+**Usage in pipeline**
+- Supports explainability narrative for deployment and judging clarity.
+
+---
+
+### Notebook 08 — `notebooks/08_model_export_fastapi.ipynb`
+
+**Concept used**
+- Packaging trained components into deployable artifacts.
+
+**Why this decision**
+- Bridges notebook experimentation to production API consumption.
+
+**Usage in pipeline**
+- Exports `pm_pipeline_*.joblib` and related assets used by `api/` and `vhack/` stack.
+
+---
+
+### Notebook 09 — `notebooks/09_mtda_multi_target_extension.ipynb`
+
+**Concept/model used**
+- Multi-target or extended transfer adaptation experiments.
+
+**Why this decision**
+- Tests scalability and generalization for future machine onboarding.
+
+**Usage in pipeline**
+- Forward-looking extension path for broader deployment scenarios.
+
+---
+
+## 6) Artifact Contract (Training → Runtime)
+
+### Produced by notebooks / `src/`
+- Model weights (`.keras`, `.weights.h5`)
+- Pipeline bundles (`.joblib`)
+- Alignment/scaling arrays (`.npy`)
+- Processed datasets (`data/processed/`)
+
+### Consumed by runtime
+- `api/predictor.py`, `api/adapt.py`
+- `vhack/backend/services/*`
+- Frontend/operator flows through backend API endpoints
+
+---
+
+## 7) Project Structure
 
 ```text
 .
-├── app.py
-├── api/
-│   ├── main.py
-│   ├── predictor.py
-│   ├── adapt.py
-│   └── schemas.py
-├── notebooks/
-│   ├── 01_data_exploration.ipynb
-│   ├── 02_preprocessing_noise_handling.ipynb
-│   ├── 03_changepoint_anomaly_detection.ipynb
-│   ├── 04_baseline_lstm_rul.ipynb
-│   ├── 05_lstm_dann_domain_adaptation.ipynb
-│   ├── 06_model_evaluation_comparison.ipynb
-│   ├── 07_interpretability.ipynb
-│   ├── 08_model_export_fastapi.ipynb
-│   └── 09_mtda_multi_target_extension.ipynb
-├── src/
-├── data/
-│   ├── raw/
-│   └── processed/
-├── models/
-│   └── saved/
-├── artifacts/
-├── vhack/
-│   ├── backend/
-│   ├── frontend/
-│   ├── app.py
-│   └── streamlit_app.py
+├── notebooks/                     # Evidence and experiments (01..09)
+├── src/                           # Reusable ML pipeline code
+├── api/                           # FastAPI inference and adaptation endpoints
+├── vhack/                         # Product backend + frontend + app entrypoints
+├── data/                          # raw/ and processed/
+├── models/saved/                  # exported deployable artifacts
+├── artifacts/                     # experiment artifacts
+├── app.py                         # root Streamlit workflow
 ├── requirements.txt
 └── Dockerfile
 ```
 
 ---
 
-## Getting Started
+## 8) Getting Started
 
-### 1) Install dependencies
+### Local setup
 
 ```bash
 python -m venv .venv
@@ -311,11 +267,14 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 2) Prepare data
+### Data placement
 
-Place C-MAPSS raw files in `data/raw/` (`train_*`, `test_*`, `RUL_*`).
+Put C-MAPSS files under `data/raw/`:
+- `train_FD001.txt` … `train_FD004.txt`
+- `test_FD001.txt` … `test_FD004.txt`
+- `RUL_FD001.txt` … `RUL_FD004.txt`
 
-### 3) Run notebook pipeline (recommended order)
+### Run notebook pipeline (recommended)
 
 1. `notebooks/01_data_exploration.ipynb`
 2. `notebooks/02_preprocessing_noise_handling.ipynb`
@@ -325,15 +284,15 @@ Place C-MAPSS raw files in `data/raw/` (`train_*`, `test_*`, `RUL_*`).
 6. `notebooks/06_model_evaluation_comparison.ipynb`
 7. `notebooks/07_interpretability.ipynb`
 8. `notebooks/08_model_export_fastapi.ipynb`
-9. `notebooks/09_mtda_multi_target_extension.ipynb` (optional/advanced)
+9. `notebooks/09_mtda_multi_target_extension.ipynb` (optional advanced)
 
-### 4) Run API
+### Run API
 
 ```bash
 uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### 5) Run apps
+### Run apps
 
 ```bash
 streamlit run app.py
@@ -342,78 +301,50 @@ streamlit run vhack/streamlit_app.py
 
 ---
 
-## Environment Variables
+## 9) Environment Variables
 
-No strict mandatory variables are required in the current default setup.
+No mandatory env vars are required in default local mode.
 
-Common deployment variables:
+Common deployment options:
 - `PYTHONPATH`
 - `HOST`
 - `PORT`
-- `MODELS_DIR` (if externalized in your launcher/scripts)
+- `MODELS_DIR` (if externalized by deployment scripts)
 
 ---
 
-## API Reference
+## 10) API Reference
 
 Base URL (local): `http://localhost:8000`
 
-### `GET /health`
-Returns API liveness.
-
-### `GET /models`
-Returns available canonical dataset models.
-
-### `POST /predict`
-Predicts RUL and health state using exported pipeline artifacts.
-
-### `POST /adapt`
-Fine-tunes for a new machine domain using uploaded labeled sequences.
-
-### `POST /predict/adapted`
-Runs prediction on an adapted machine-specific model.
-
-### `GET /machines`
-Lists adapted machine IDs available for inference.
+- `GET /health` — liveness check
+- `GET /models` — available canonical models
+- `POST /predict` — RUL + health-state prediction
+- `POST /adapt` — fine-tune for new machine domain
+- `POST /predict/adapted` — inference with adapted machine model
+- `GET /machines` — list adapted machine IDs
 
 ---
 
-## Challenges Faced
+## 11) Challenges Faced (and How Addressed)
 
-- Cross-domain drift between datasets and machine types.
-- Preserving temporal signal while suppressing noise.
-- Keeping feature alignment stable when onboarding non-canonical sensors.
-- Ensuring artifact compatibility between notebook training and runtime APIs.
-- Translating technical model outputs into operator-actionable explanations.
-
----
-
-## Future Roadmap
-
-- Add stronger experiment tracking/versioned model registry.
-- Add CI for API schema checks and artifact load smoke tests.
-- Expand explainability and monitoring endpoints.
-- Harden production settings (auth, CORS policy, rate limits).
-- Consolidate notebook-to-product handoff into one reproducible release pipeline.
+- Domain shift between benchmark and real-like data → DANN + feature aligner + adapter.
+- Evaluation integrity issues (window mismatch, scaling mismatch) → fixed with notebook checks.
+- HI quality instability on truncated lifecycles → switched to complete-lifecycle evaluation.
+- Packaging/reuse complexity → standardized artifact outputs in `models/saved/`.
 
 ---
 
-## Troubleshooting
+## 12) Future Roadmap
 
-### Artifacts not found
-- Confirm `models/saved/` contains expected exported files from Notebook 08.
-
-### Inference mismatch
-- Re-check feature order consistency between training pipeline and API input payloads.
-
-### API startup issues
-```bash
-pip install -r requirements.txt
-uvicorn api.main:app --port 8000
-```
+- Add CI checks for artifact compatibility and API contract tests.
+- Add experiment tracking/versioning for reproducibility at scale.
+- Expand monitoring and drift-detection hooks in serving layer.
+- Harden production API security settings.
 
 ---
 
-## License
+## 13) License
 
-Add a license file before public release (e.g., MIT or Apache-2.0).
+This project is licensed under the Apache License 2.0.
+See [LICENSE](LICENSE) for the full text.
