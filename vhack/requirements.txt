@@ -1,0 +1,10 @@
+streamlit
+streamlit-autorefresh
+pandas
+numpy
+plotly
+fastapi
+langchain
+supabase
+google-generativeai
+python-dotenv

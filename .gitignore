@@ -8,3 +8,11 @@ __pycache__/
 # Generated arrays / artifacts
 /data/processed/*.npy
 /tmp_extract_metrics.py
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.DS_Store
+.env
+.env.local
+.env.*.local

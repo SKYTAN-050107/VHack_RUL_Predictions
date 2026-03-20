@@ -1,0 +1,142 @@
+"""
+Mock maintenance schedule for the next 30 days.
+Used by Page 5 (Schedule) for the Gantt chart and resource utilization views.
+"""
+
+from datetime import datetime, timedelta
+
+_TODAY = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _d(offset_days: int, hour: int = 8) -> str:
+    return (_TODAY + timedelta(days=offset_days, hours=hour)).strftime("%Y-%m-%d %H:%M")
+
+
+MOCK_SCHEDULES = [
+    {
+        "schedule_id": "SCH_001",
+        "machine_id": "GEAR_01",
+        "machine_name": "High-Speed Gearbox",
+        "status": "Urgent",
+        "recommended_date": _d(0),
+        "start": _d(0, 8),
+        "finish": _d(0, 16),
+        "duration_hours": 8,
+        "assigned_team": "Team Alpha",
+        "technician": "Carlos Mendez",
+        "plan_type": "URGENT",
+        "description": "Emergency gearbox overhaul — gear tooth replacement + bearing swap",
+        "parts_ordered": True,
+    },
+    {
+        "schedule_id": "SCH_002",
+        "machine_id": "PUMP_03",
+        "machine_name": "Chemical Feed Pump",
+        "status": "Urgent",
+        "recommended_date": _d(1),
+        "start": _d(1, 8),
+        "finish": _d(1, 14),
+        "duration_hours": 6,
+        "assigned_team": "Team Beta",
+        "technician": "Aisha Rahman",
+        "plan_type": "URGENT",
+        "description": "Bearing replacement + seal kit + cavitation inspection",
+        "parts_ordered": True,
+    },
+    {
+        "schedule_id": "SCH_003",
+        "machine_id": "COMP_01",
+        "machine_name": "Air Compressor Unit 1",
+        "status": "Urgent",
+        "recommended_date": _d(2),
+        "start": _d(2, 7),
+        "finish": _d(2, 15),
+        "duration_hours": 8,
+        "assigned_team": "Team Alpha",
+        "technician": "Carlos Mendez",
+        "plan_type": "BALANCED",
+        "description": "Valve replacement + piston ring inspection + oil service",
+        "parts_ordered": True,
+    },
+    {
+        "schedule_id": "SCH_004",
+        "machine_id": "MOTOR_02",
+        "machine_name": "Conveyor Drive Motor",
+        "status": "Scheduled",
+        "recommended_date": _d(5),
+        "start": _d(5, 8),
+        "finish": _d(5, 13),
+        "duration_hours": 5,
+        "assigned_team": "Team Beta",
+        "technician": "Wei Liang",
+        "plan_type": "BALANCED",
+        "description": "Motor winding inspection + rotor bar check + thermal imaging",
+        "parts_ordered": False,
+    },
+    {
+        "schedule_id": "SCH_005",
+        "machine_id": "PUMP_02",
+        "machine_name": "Cooling Water Pump #2",
+        "status": "Scheduled",
+        "recommended_date": _d(7),
+        "start": _d(7, 9),
+        "finish": _d(7, 14),
+        "duration_hours": 5,
+        "assigned_team": "Team Gamma",
+        "technician": "Priya Singh",
+        "plan_type": "BALANCED",
+        "description": "Impeller inspection + bearing lubrication + alignment check",
+        "parts_ordered": False,
+    },
+    {
+        "schedule_id": "SCH_006",
+        "machine_id": "CONV_01",
+        "machine_name": "Main Conveyor Belt",
+        "status": "Scheduled",
+        "recommended_date": _d(10),
+        "start": _d(10, 7),
+        "finish": _d(10, 12),
+        "duration_hours": 5,
+        "assigned_team": "Team Gamma",
+        "technician": "Priya Singh",
+        "plan_type": "BALANCED",
+        "description": "Roller bearing L3 replacement + belt tension adjustment",
+        "parts_ordered": False,
+    },
+    {
+        "schedule_id": "SCH_007",
+        "machine_id": "PUMP_01",
+        "machine_name": "Cooling Water Pump #1",
+        "status": "Pending",
+        "recommended_date": _d(21),
+        "start": _d(21, 8),
+        "finish": _d(21, 11),
+        "duration_hours": 3,
+        "assigned_team": "Team Beta",
+        "technician": "Aisha Rahman",
+        "plan_type": "DEFERRED",
+        "description": "Routine preventive maintenance — lubrication + seal check",
+        "parts_ordered": False,
+    },
+    {
+        "schedule_id": "SCH_008",
+        "machine_id": "GEAR_02",
+        "machine_name": "Reduction Gearbox",
+        "status": "Pending",
+        "recommended_date": _d(28),
+        "start": _d(28, 8),
+        "finish": _d(28, 11),
+        "duration_hours": 3,
+        "assigned_team": "Team Alpha",
+        "technician": "Carlos Mendez",
+        "plan_type": "DEFERRED",
+        "description": "Scheduled oil change + worm gear mesh inspection",
+        "parts_ordered": False,
+    },
+]
+
+TEAM_CAPACITY = {
+    "Team Alpha":  {"available_hours_per_week": 40, "members": 2, "specialty": "Gearboxes & Heavy Machinery"},
+    "Team Beta":   {"available_hours_per_week": 40, "members": 2, "specialty": "Pumps & Fluid Systems"},
+    "Team Gamma":  {"available_hours_per_week": 32, "members": 2, "specialty": "Conveyors & Motors"},
+}
