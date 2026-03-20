@@ -1,0 +1,25 @@
+# Industrial Machinery Technical Manual (SME Resilience Edition)
+
+## 1. Conveyor Belt A
+- **Failure Mode: Bearing Wear**
+  - Symptoms: High-frequency vibration, squealing noise.
+  - Fix: Replace NSK-6205 bearings. Apply lithium grease every 500 hours.
+- **Failure Mode: Belt Slippage**
+  - Symptoms: Reduced throughput, heat at drive pulley.
+  - Fix: Tighten tensioner bolts by 2 full turns. Replace belt if cracks exceed 3mm.
+
+## 2. Motor Pump 03
+- **Failure Mode: Cavitation**
+  - Symptoms: "Gravel" noise, fluctuating output pressure.
+  - Fix: Check intake valve for blockage. Clear debris from impeller.
+- **Failure Mode: Seal Failure**
+  - Symptoms: Fluid leakage at shaft, drop in efficiency.
+  - Fix: Replace mechanical seal (Model P-12). Check shaft alignment.
+
+## 3. Hydraulic Press
+- **Failure Mode: Valve Sticking**
+  - Symptoms: Erratic ram movement, slow return stroke.
+  - Fix: Flush hydraulic system. Replace filter (10-micron).
+- **Failure Mode: Cylinder Leakage**
+  - Symptoms: Visual oil on ram, inability to hold pressure.
+  - Fix: Replace O-ring kit (Part #HP-OR-99). Priority: High.

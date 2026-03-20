@@ -1,0 +1,19 @@
+# SME Financial & Operational Risk Report
+
+## 1. Downtime Cost Analysis
+The "Total Downtime Cost" formula for our factory is:
+Downtime Cost = (Lost Production Hours * $500/hr) + (Idle Labor Cost * $150/hr)
+
+- Lost Production: Every hour of machine downtime results in $500 of lost revenue.
+- Idle Labor: Fixed technician costs are $150/hr during unscheduled downtime.
+
+## 2. Maintenance Strategy Costs
+- **Strategy A (Low Cost):** Basic cleaning and lubrication. Cost: $200. Estimated Time: 2 hours.
+- **Strategy B (Standard):** Component replacement (Bearings/Seals). Cost: $800. Estimated Time: 5 hours.
+- **Strategy C (High Performance):** Full system overhaul. Cost: $2,500. Estimated Time: 12 hours.
+
+## 3. Component Pricing
+- NSK-6205 Bearings: $45 each.
+- Mechanical Seal P-12: $120 each.
+- Hydraulic Filter (10-mic): $35 each.
+- Labor Rate (External): $85/hr.
